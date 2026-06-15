@@ -147,3 +147,12 @@ scratch_test.py
 ws_test_delay.py
 test_trace.py
 
+# Internal planning documents
+ANTIGRAVITY_PROMPT.md
+agentlens_project_handover_summary.md
+*_handover_*.md
+
+# Manual test scripts
+test_agent.py
+verify_dashboard_data.py
+test_trace.py
