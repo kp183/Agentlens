@@ -30,14 +30,14 @@ class SpanPayload(BaseModel):
     duration_ms: int | None = None
 
     # LLM fields
-    model: str | None = None
+    model: str | None = Field(None, max_length=200)
     provider: Literal["openai", "anthropic", "google", "other"] | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
     cost_usd: float | None = None
 
     # Tool fields
-    tool_name: str | None = None
+    tool_name: str | None = Field(None, max_length=500)
     tool_call_id: str | None = None
 
     # Payload
@@ -47,9 +47,9 @@ class SpanPayload(BaseModel):
     tags: list[str] | None = None
 
     # Error fields
-    error_type: str | None = None
-    error_message: str | None = None
-    error_stack: str | None = None
+    error_type: str | None = Field(None, max_length=200)
+    error_message: str | None = Field(None, max_length=10_000)
+    error_stack: str | None = Field(None, max_length=50_000)
 
 
 class IngestRequest(BaseModel):

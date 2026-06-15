@@ -71,7 +71,7 @@ async def ingest_spans(
 
     for trace_id, trace_spans in by_trace.items():
         # Resolve/create trace — cross-project guard
-        trace = await resolve_trace(db, project.id, trace_spans[0])
+        trace = await resolve_trace(db, project.id, trace_spans)
         if trace is None:
             rejected += len(trace_spans)
             continue

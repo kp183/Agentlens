@@ -170,22 +170,32 @@ def test_api_key_hash_round_trip(_: None) -> None:
 @pytest.mark.asyncio
 async def test_revoked_key_rejected_after_cache_clear() -> None:
     """Feature: agentlens-mvp, Property 5: Revoked key is rejected after cache expiry"""
+    import httpx
     import redis.asyncio as aioredis
+    from app.database import AsyncSessionLocal, engine
+    from app.redis_client import redis_client
+    from app.config import get_settings
+    from app.middleware.auth import require_clerk_user
 
-    cfg = _get_settings()
-    engine = create_async_engine(cfg.database_url)
-    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    redis = aioredis.from_url(cfg.redis_url, decode_responses=True)
+    # Reset SQLAlchemy engine pool to discard stale connections from closed loops
+    engine.pool = engine.pool.recreate()
 
-    raw_key = None
-    key_hash = None
+    # Reset Redis connection pool to discard stale connections from closed loops
+    cfg = get_settings()
+    redis_client.connection_pool = aioredis.ConnectionPool.from_url(
+        cfg.redis_url,
+        encoding="utf-8",
+        decode_responses=True,
+        max_connections=20,
+    )
 
-    async with factory() as session:
-        org = Organization(name="test-org", slug=f"test-{_uuid.uuid4().hex[:8]}")
+    async with AsyncSessionLocal() as session:
+        suffix = _uuid.uuid4().hex[:8]
+        org = Organization(name=f"Test Org {suffix}", slug=f"test-org-{suffix}")
         session.add(org)
         await session.flush()
 
-        user = User(clerk_id=f"test_{_uuid.uuid4().hex}")
+        user = User(clerk_id=f"test_{suffix}", email=f"user_{suffix}@example.com", name="Test User")
         session.add(user)
         await session.flush()
 
@@ -193,52 +203,51 @@ async def test_revoked_key_rejected_after_cache_clear() -> None:
         session.add(member)
         await session.flush()
 
-        project = Project(org_id=org.id, name="test", slug=f"p-{_uuid.uuid4().hex[:8]}")
+        project = Project(org_id=org.id, name=f"Test Project {suffix}", slug=f"test-proj-{suffix}")
         session.add(project)
         await session.flush()
 
-        raw_key, key_hash = generate_api_key()
+        key, key_hash = generate_api_key()
         api_key = APIKey(
             project_id=project.id,
-            name="test-key",
+            name="Test Key",
             key_hash=key_hash,
-            key_prefix=get_key_prefix(raw_key),
+            key_prefix=get_key_prefix(key),
         )
         session.add(api_key)
         await session.commit()
+        api_key_id = api_key.id
 
-        # Revoke the key
-        api_key.revoked_at = datetime.now(timezone.utc)
-        await session.commit()
-
-    # Clear Redis cache
-    await redis.delete(f"apikey:{key_hash}")
-    await redis.aclose()
-    await engine.dispose()
-
-    # Override dependencies so the TestClient's sync event loop uses fresh
-    # Redis/DB connections created within that loop (not the async test's loop).
-    from app.database import get_db
-    from app.redis_client import get_redis
-
-    # Build a mock Redis that returns no cached value (cache was cleared)
-    mock_redis = _make_mock_redis()
-
-    # Build a mock DB that returns no rows (key is revoked, WHERE revoked_at IS NULL excludes it)
-    mock_db = _make_mock_db()
-
-    app.dependency_overrides[get_redis] = lambda: mock_redis
-    app.dependency_overrides[get_db] = lambda: mock_db
+    # Override dependencies for require_clerk_user
+    app.dependency_overrides[require_clerk_user] = lambda: user
 
     try:
-        # Revoked key must return 401
-        resp = _client.post(
-            "/v1/ingest",
-            headers={"Authorization": f"Bearer {raw_key}"},
-            json={"spans": []},
-        )
-        assert resp.status_code in (401, 422), (
-            f"Expected 401 for revoked key, got {resp.status_code}: {resp.text}"
-        )
+        # Use httpx.AsyncClient with the ASGI app
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            # 2. Verify it works (caches in Redis)
+            response = await client.post(
+                "/v1/ingest",
+                headers={"Authorization": f"Bearer {key}"},
+                json={"spans": []},
+            )
+            assert response.status_code in (200, 422)
+
+            # 3. Revoke it via endpoint (Fix 8 deletes Redis cache immediately inside the revoke endpoint)
+            resp2 = await client.delete(f"/v1/api-keys/{api_key_id}")
+            assert resp2.status_code == 204
+
+            # 4. Next request should be 401 — NO sleep or manual cache clear needed anymore
+            response = await client.post(
+                "/v1/ingest",
+                headers={"Authorization": f"Bearer {key}"},
+                json={"spans": []},
+            )
+            assert response.status_code == 401
     finally:
         app.dependency_overrides.clear()
+
+
+
+
+

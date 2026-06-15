@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 async def resolve_trace(
     session: AsyncSession,
     project_id: uuid.UUID,
-    span: SpanPayload,
+    spans: list[SpanPayload],
 ) -> Trace | None:
     """UPSERT a Trace row for the given span.
 
@@ -36,6 +36,10 @@ async def resolve_trace(
     - Cross-project guard: if the trace_id already exists under a different
       project_id, returns None (caller must increment rejected count).
     """
+    span = spans[0]
+    # Check if a root span exists in the batch
+    root_span = next((s for s in spans if s.parent_span_id is None), None)
+
     result = await session.execute(
         select(Trace).where(Trace.id == span.trace_id)
     )
@@ -51,11 +55,16 @@ async def resolve_trace(
                 project_id,
             )
             return None
-        # Touch updated_at
+        # Touch updated_at, and update name if it was empty and this is a root span
+        update_vals = {"updated_at": datetime.now(timezone.utc)}
+        if not existing.name and root_span is not None:
+            update_vals["name"] = root_span.name
+            existing.name = root_span.name
+
         await session.execute(
             update(Trace)
             .where(Trace.id == span.trace_id)
-            .values(updated_at=datetime.now(timezone.utc))
+            .values(**update_vals)
         )
         return existing
 
@@ -63,7 +72,7 @@ async def resolve_trace(
     trace = Trace(
         id=span.trace_id,
         project_id=project_id,
-        name=span.name if span.parent_span_id is None else None,
+        name=root_span.name if root_span is not None else None,
         status="running",
         started_at=span.started_at,
     )
@@ -135,45 +144,69 @@ async def update_trace_aggregates(
     """Update trace aggregates when a root span with terminal status arrives.
 
     Detects root span (parent_span_id IS NULL) with status 'success' or 'error'.
-    Recalculates totals from all spans in the batch.
+    Recalculates totals from all spans of the trace in the database.
     """
-    root_span = next(
+    # 1. Check if the root span is inside the current batch and has terminal status
+    root_payload = next(
         (
             s for s in spans
             if s.parent_span_id is None and s.status in ("success", "error")
         ),
         None,
     )
-    if root_span is None:
+    if root_payload is None:
         return
 
-    total_input = sum(s.input_tokens or 0 for s in spans)
-    total_output = sum(s.output_tokens or 0 for s in spans)
-    total_tokens = total_input + total_output
-    total_cost = sum(s.cost_usd or 0.0 for s in spans)
-    error_count = sum(1 for s in spans if s.status == "error")
-    span_count = len(spans)
+    # 2. Query the database to retrieve all spans for this trace to compute true aggregates
+    result = await session.execute(
+        select(Span).where(Span.trace_id == trace_id)
+    )
+    all_spans = result.scalars().all()
 
-    duration_ms = root_span.duration_ms
-    if duration_ms is None and root_span.ended_at:
-        delta = root_span.ended_at - root_span.started_at
+    total_input = sum(s.input_tokens or 0 for s in all_spans)
+    total_output = sum(s.output_tokens or 0 for s in all_spans)
+    total_tokens = total_input + total_output
+    total_cost = sum(float(s.cost_usd or 0.0) for s in all_spans)
+    error_count = sum(1 for s in all_spans if s.status == "error")
+    span_count = len(all_spans)
+
+    # 3. Retrieve root span from the full list or payload to calculate exact duration & timing
+    root_span = next((s for s in all_spans if s.parent_span_id is None), None)
+
+    # Fallback to current root payload properties if database fetch is pending commit
+    name = root_span.name if root_span else root_payload.name
+    status = root_span.status if root_span else root_payload.status
+    ended_at = root_span.ended_at if root_span else root_payload.ended_at
+    started_at = root_span.started_at if root_span else root_payload.started_at
+    model = root_span.model if root_span else root_payload.model
+
+    duration_ms = root_payload.duration_ms
+    if duration_ms is None and ended_at and started_at:
+        delta = ended_at - started_at
         duration_ms = int(delta.total_seconds() * 1000)
+
+    update_vals = {
+        "status": status,
+        "span_count": span_count,
+        "error_count": error_count,
+        "total_tokens": total_tokens,
+        "input_tokens": total_input,
+        "output_tokens": total_output,
+        "total_cost_usd": total_cost,
+    }
+    if name:
+        update_vals["name"] = name
+    if ended_at:
+        update_vals["ended_at"] = ended_at
+    if duration_ms is not None:
+        update_vals["duration_ms"] = duration_ms
+    if model:
+        update_vals["model"] = model
 
     await session.execute(
         update(Trace)
         .where(Trace.id == trace_id)
-        .values(
-            status=root_span.status,
-            ended_at=root_span.ended_at,
-            duration_ms=duration_ms,
-            span_count=span_count,
-            error_count=error_count,
-            total_tokens=total_tokens,
-            input_tokens=total_input,
-            output_tokens=total_output,
-            total_cost_usd=total_cost,
-            model=root_span.model,
-        )
+        .values(**update_vals)
     )
 
 

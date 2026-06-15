@@ -42,6 +42,9 @@ async def _authenticate(token: str, trace_id: uuid.UUID) -> bool:
 
     settings = get_settings()
 
+    if settings.local_mode:
+        return True
+
     async with _SessionLocal() as session:
         # Try API key first (starts with al_live_)
         if token.startswith("al_live_"):
@@ -69,7 +72,7 @@ async def _authenticate(token: str, trace_id: uuid.UUID) -> bool:
         try:
             jwks = await _get_jwks()
             payload = jose_jwt.decode(
-                token, jwks, algorithms=["RS256"], options={"verify_aud": False}
+                token, jwks, algorithms=["RS256"], options={"verify_aud": False, "verify_exp": True}
             )
             clerk_id = payload.get("sub")
             if not clerk_id:
@@ -106,18 +109,36 @@ async def _authenticate(token: str, trace_id: uuid.UUID) -> bool:
             return True
 
         except JWTError as exc:
-            raise AuthenticationError(f"Invalid JWT: {exc}") from exc
+            logger.warning("JWT verification failed: %s", exc)
+            raise AuthenticationError("Invalid or expired token") from exc
 
 
 @router.websocket("/ws/traces/{trace_id}")
 async def trace_websocket(
     websocket: WebSocket,
     trace_id: uuid.UUID,
-    token: str | None = None,
 ) -> None:
-    """Stream span events for a running trace."""
-    if not token:
-        await websocket.close(code=4001, reason="Missing token")
+    """Stream span events for a running trace.
+
+    Auth: send {"token": "<jwt_or_api_key>"} as first message after connect.
+    """
+    await websocket.accept()
+
+    # Wait up to 5 seconds for auth message
+    try:
+        raw = await asyncio.wait_for(
+            websocket.receive_text(), timeout=5.0
+        )
+        data = json.loads(raw)
+        token = data.get("token")
+        if not token:
+            await websocket.close(code=4001, reason="Missing token in auth message")
+            return
+    except asyncio.TimeoutError:
+        await websocket.close(code=4001, reason="Authentication timeout")
+        return
+    except json.JSONDecodeError:
+        await websocket.close(code=4001, reason="Invalid auth message format")
         return
 
     try:
@@ -126,7 +147,6 @@ async def trace_websocket(
         await websocket.close(code=4001, reason=str(exc))
         return
 
-    await websocket.accept()
     channel = f"trace:{trace_id}"
 
     pubsub = redis_client.pubsub()

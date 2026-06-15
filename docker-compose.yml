@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: agentlens
       POSTGRES_DB: agentlens
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -21,7 +21,7 @@ services:
   redis:
     image: redis:7
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -40,8 +40,13 @@ services:
     volumes:
       - ./apps/api:/app
       - ./packages/python-sdk:/sdk
-    env_file:
-      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://agentlens:agentlens@postgres:5432/agentlens
+      REDIS_URL: redis://redis:6379/0
+      LOCAL_MODE: "true"
+      ENVIRONMENT: development
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      INGEST_RATE_LIMIT: "1000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,15 +58,19 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
-    command: npm run dev
+    command: npx next dev --hostname 0.0.0.0 --port 3000
     ports:
       - "3000:3000"
     working_dir: /app
     volumes:
       - ./apps/web:/app
-      - /app/node_modules   # anonymous volume keeps container node_modules intact
-    env_file:
-      - .env
+      - /app/node_modules
+      - /app/.next
+    environment:
+      NEXT_PUBLIC_LOCAL_MODE: "true"
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - api
 
 volumes:
   postgres_data:

@@ -22,6 +22,7 @@ export default function SignUpPage() {
       <div className="relative z-10 p-2 border border-slate-900 bg-slate-900/30 rounded-2xl shadow-2xl backdrop-blur-xl">
         <SignUp
           routing="path"
+          path="/sign-up"
           appearance={{
             variables: {
               colorPrimary: "#6366f1",

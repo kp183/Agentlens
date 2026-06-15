@@ -222,14 +222,7 @@ async def test_api_key_lifecycle(client, test_env) -> None:
         revoke_resp = client.delete(f"/v1/api-keys/{new_key_id}")
         assert revoke_resp.status_code == 204
 
-        # Clear Redis cache for the revoked key so it takes immediate effect
-        import redis.asyncio as aioredis
-        from app.config import get_settings
-        cfg = get_settings()
-        redis = aioredis.from_url(cfg.redis_url, decode_responses=True)
-        new_hash = hash_api_key(new_raw_key)
-        await redis.delete(f"apikey:{new_hash}")
-        await redis.aclose()
+        # Redis cache is cleared automatically by the endpoint on revocation
 
         # 4. Verify revoked key is rejected with a 401
         rejected_resp = client.post(
@@ -241,3 +234,88 @@ async def test_api_key_lifecycle(client, test_env) -> None:
 
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_org_project_deletion_lifecycle(client, test_env) -> None:
+    from app.middleware.auth import require_clerk_user
+    from app.models.user import User
+
+    # We start with the test_env org, project, and API Key
+    org_id = test_env["org_id"]
+    project_id = test_env["project_id"]
+    api_key_id = test_env["api_key_id"]
+
+    # 1. Non-member access check:
+    # We override require_clerk_user to return a new user who is NOT a member of this organization.
+    suffix = uuid.uuid4().hex[:8]
+    non_member_user = User(
+        id=uuid.uuid4(),
+        clerk_id=f"usr_clerk_{suffix}",
+        email=f"non_member_{suffix}@example.com",
+        name="Non Member User"
+    )
+
+    app.dependency_overrides[require_clerk_user] = lambda: non_member_user
+
+    try:
+        # Non-member attempts to delete project -> 403
+        resp = client.delete(f"/v1/projects/{project_id}")
+        assert resp.status_code == 403
+
+        # Non-member attempts to delete org -> 403
+        resp = client.delete(f"/v1/orgs/{org_id}")
+        assert resp.status_code == 403
+
+    finally:
+        app.dependency_overrides.clear()
+
+    # 2. Member/Owner attempts deletion
+    # Override user to the owner (test_env["user"])
+    app.dependency_overrides[require_clerk_user] = lambda: test_env["user"]
+
+    try:
+        # Verify project exists by getting details -> 200
+        resp = client.get(f"/v1/projects/{project_id}")
+        assert resp.status_code == 200
+
+        # Delete the project -> 204
+        resp = client.delete(f"/v1/projects/{project_id}")
+        assert resp.status_code == 204
+
+        # Verify project is deleted -> 404
+        resp = client.get(f"/v1/projects/{project_id}")
+        assert resp.status_code == 404
+
+        # Verify associated API key list for that project fails because project is deleted -> 404
+        resp = client.get(f"/v1/api-keys", params={"project_id": str(project_id)})
+        assert resp.status_code == 404
+
+        # Now let's create a new project under the org to verify org delete cascades it too
+        resp = client.post(
+            "/v1/projects",
+            json={"org_id": str(org_id), "name": "Cascade Project", "slug": "cascade-proj"}
+        )
+        assert resp.status_code == 201
+        new_proj_id = resp.json()["id"]
+
+        # Delete the organization -> 204
+        resp = client.delete(f"/v1/orgs/{org_id}")
+        assert resp.status_code == 204
+
+        # Verify organization is deleted -> 403 (since user is no longer a member)
+        resp = client.get(f"/v1/orgs/{org_id}")
+        assert resp.status_code == 403
+
+        # Verify cascade project is deleted -> 404
+        resp = client.get(f"/v1/projects/{new_proj_id}")
+        assert resp.status_code == 404
+
+        # Verify listing projects for this org is denied / returns 403 because user is no longer a member (org/member deleted)
+        resp = client.get(f"/v1/projects", params={"org_id": str(org_id)})
+        assert resp.status_code == 403
+
+    finally:
+        app.dependency_overrides.clear()
+
+

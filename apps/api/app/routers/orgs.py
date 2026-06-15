@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.exceptions import AuthorizationError, NotFoundError
+from app.exceptions import AuthorizationError, NotFoundError, ValidationError
 from app.middleware.auth import require_clerk_user
 from app.models.org import OrgMember, Organization
 from app.models.project import Project
@@ -47,6 +47,13 @@ async def create_org(
     user: User = Depends(require_clerk_user),
     db: AsyncSession = Depends(get_db),
 ) -> OrgResponse:
+    # Check if organization with this slug already exists
+    existing_result = await db.execute(
+        select(Organization).where(Organization.slug == body.slug)
+    )
+    if existing_result.scalar_one_or_none():
+        raise ValidationError("An organization with this name or slug already exists.")
+
     org = Organization(name=body.name, slug=body.slug)
     db.add(org)
     await db.flush()  # get org.id before adding member
@@ -95,6 +102,17 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
 ) -> ProjectResponse:
     await _assert_org_member(db, body.org_id, user.id)
+
+    # Check if project with this slug already exists in this organization
+    existing_result = await db.execute(
+        select(Project).where(
+            Project.org_id == body.org_id,
+            Project.slug == body.slug
+        )
+    )
+    if existing_result.scalar_one_or_none():
+        raise ValidationError("A project with this name or slug already exists in this organization.")
+
     project = Project(org_id=body.org_id, name=body.name, slug=body.slug)
     db.add(project)
     await db.commit()
@@ -128,3 +146,42 @@ async def get_project(
         raise NotFoundError("Project not found")
     await _assert_org_member(db, project.org_id, user.id)
     return ProjectResponse.model_validate(project)
+
+
+@router.delete("/orgs/{org_id}", status_code=204)
+async def delete_org(
+    org_id: uuid.UUID,
+    user: User = Depends(require_clerk_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    member = await _assert_org_member(db, org_id, user.id)
+    if member.role != "owner":
+        raise AuthorizationError("Only the organization owner can delete the organization")
+
+    result = await db.execute(select(Organization).where(Organization.id == org_id))
+    org = result.scalar_one_or_none()
+    if not org:
+        raise NotFoundError("Organization not found")
+
+    await db.delete(org)
+    await db.commit()
+
+
+@router.delete("/projects/{project_id}", status_code=204)
+async def delete_project(
+    project_id: uuid.UUID,
+    user: User = Depends(require_clerk_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+    if not project:
+        raise NotFoundError("Project not found")
+
+    member = await _assert_org_member(db, project.org_id, user.id)
+    if member.role not in ("owner", "admin"):
+        raise AuthorizationError("Only organization owners or admins can delete projects")
+
+    await db.delete(project)
+    await db.commit()
+

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useAuth, useUser, UserButton } from "@clerk/nextjs";
+import { useAuth, useUser, UserButton } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 import { api, Organization, Project, APIKey } from "@/lib/api";
 import { 
@@ -21,6 +21,8 @@ export default function OnboardingPage() {
   const { user } = useUser();
   const router = useRouter();
 
+
+
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +37,7 @@ export default function OnboardingPage() {
   const [createdKey, setCreatedKey] = useState<APIKey | null>(null);
   
   const [copied, setCopied] = useState(false);
+  const [guideTab, setGuideTab] = useState<"install" | "env" | "code">("install");
 
   // Helper to slugify text
   const slugify = (text: string) =>
@@ -117,7 +120,7 @@ export default function OnboardingPage() {
         const response = await api.listTraces(createdProject.id, token, { limit: 1 });
         if (response.data && response.data.length > 0 && active) {
           clearInterval(interval);
-          router.push(`/dashboard?project_id=${createdProject.id}`);
+          router.push(`?project_id=${createdProject.id}`);
         }
       } catch (err) {
         console.error("Polling error:", err);
@@ -167,6 +170,12 @@ al.instrument_openai()`;
             Signed in as <span className="text-slate-200">{user?.emailAddresses[0]?.emailAddress}</span>
           </span>
           <UserButton afterSignOutUrl="/sign-in" />
+          <button
+            onClick={() => router.push("/")}
+            className="text-xs text-slate-400 hover:text-indigo-400 transition font-medium"
+          >
+            Skip to Dashboard →
+          </button>
         </div>
       </header>
 
@@ -291,7 +300,7 @@ al.instrument_openai()`;
             </form>
           )}
 
-          {/* STEP 3: API KEY & CODE SNIPPET */}
+          {/* STEP 3: API KEY & INTEGRATION GUIDE */}
           {step === 3 && (
             <div className="space-y-6 animate-fadeIn">
               <div className="space-y-2">
@@ -322,11 +331,99 @@ al.instrument_openai()`;
                 </button>
               </div>
 
-              {/* Integration Snippet */}
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-400 tracking-wide uppercase">Add to your Agent Application</label>
-                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 overflow-x-auto">
-                  <pre className="text-xs font-mono text-slate-300">{snippet}</pre>
+              {/* Integration Guide Tabs */}
+              <div className="space-y-3">
+                <label className="text-xs font-semibold text-slate-400 tracking-wide uppercase block">SDK Integration Guide</label>
+                
+                {/* Tab Header */}
+                <div className="flex border-b border-slate-800 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setGuideTab("install")}
+                    className={`pb-2.5 px-4 font-semibold transition ${
+                      guideTab === "install" ? "border-b-2 border-indigo-500 text-indigo-400" : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    1. Install SDK
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGuideTab("env")}
+                    className={`pb-2.5 px-4 font-semibold transition ${
+                      guideTab === "env" ? "border-b-2 border-indigo-500 text-indigo-400" : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    2. Setup Env
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGuideTab("code")}
+                    className={`pb-2.5 px-4 font-semibold transition ${
+                      guideTab === "code" ? "border-b-2 border-indigo-500 text-indigo-400" : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    3. Code Structure
+                  </button>
+                </div>
+
+                {/* Tab Content */}
+                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800/80 text-xs text-slate-300">
+                  {guideTab === "install" && (
+                    <div className="space-y-2">
+                      <p className="text-slate-400">Install the AgentLens Python SDK in your virtual environment:</p>
+                      <pre className="p-3 rounded-lg bg-slate-900 border border-slate-800/60 font-mono text-indigo-300 select-all">
+                        pip install agentlens
+                      </pre>
+                    </div>
+                  )}
+
+                  {guideTab === "env" && (
+                    <div className="space-y-2">
+                      <p className="text-slate-400">Create a <code className="text-slate-200 bg-slate-900 px-1 py-0.5 rounded font-mono">.env</code> file in your project root to keep keys safe:</p>
+                      <pre className="p-3 rounded-lg bg-slate-900 border border-slate-800/60 font-mono text-slate-300 select-all">
+{`# Add this to your project .env file
+AGENTLENS_API_KEY="${createdKey?.raw_key || "your_api_key_here"}"
+AGENTLENS_BASE_URL="${typeof window !== "undefined" ? window.location.origin.replace(":3000", ":8000") : "http://localhost:8000"}"`}
+                      </pre>
+                    </div>
+                  )}
+
+                  {guideTab === "code" && (
+                    <div className="space-y-2">
+                      <p className="text-slate-400">Initialize the SDK at entrypoint and wrap your execution in traces/spans:</p>
+                      <pre className="p-3 rounded-lg bg-slate-900 border border-slate-800/60 font-mono text-slate-300 overflow-x-auto whitespace-pre leading-relaxed max-h-[300px] overflow-y-auto select-all text-[11px]">
+{`import os
+import agentlens as al
+from openai import OpenAI
+
+# Initialize client using environment variables
+al.init(
+    api_key=os.getenv("AGENTLENS_API_KEY"),
+    base_url=os.getenv("AGENTLENS_BASE_URL", "http://localhost:8000")
+)
+
+# Auto-instrument OpenAI / Anthropic calls
+al.instrument_openai()
+
+# Decorate your main agent loop to create a trace root
+@al.trace(name="My First Agent")
+def run_agent(prompt: str):
+    # Wrap sub-operations in nested spans
+    with al.span(name="Database Lookup", span_type="tool") as s:
+        s.set_input({"query": "lookup user"})
+        # ... fetch data ...
+        s.set_output({"status": "verified"})
+
+    # Instrument OpenAI calls automatically
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.choices[0].message.content`}
+                      </pre>
+                    </div>
+                  )}
                 </div>
               </div>
 

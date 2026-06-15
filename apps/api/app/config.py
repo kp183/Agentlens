@@ -25,6 +25,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
     # ------------------------------------------------------------------ #
@@ -41,10 +42,10 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------ #
     # Clerk authentication                                                 #
     # ------------------------------------------------------------------ #
-    clerk_secret_key: str
-    clerk_publishable_key: str
+    clerk_secret_key: str = ""
+    clerk_publishable_key: str = ""
     # e.g. https://<instance>.clerk.accounts.dev/.well-known/jwks.json
-    clerk_jwks_url: str
+    clerk_jwks_url: str = ""
 
     # ------------------------------------------------------------------ #
     # Application                                                          #
@@ -52,6 +53,7 @@ class Settings(BaseSettings):
     # "development" or "production"
     environment: str = "development"
     api_version: str = "v1"
+    local_mode: bool = False  # set LOCAL_MODE=true in .env to skip auth
 
     # Explicit CORS origin allowlist.  Never use wildcard "*".
     # Supply as a comma-separated string in the environment:
@@ -82,6 +84,18 @@ class Settings(BaseSettings):
         if isinstance(value, list):
             return ",".join(value)
         return str(value)
+
+    @field_validator("local_mode", mode="after")
+    @classmethod
+    def block_local_mode_in_production(cls, v: bool, info) -> bool:
+        env = info.data.get("environment", "development")
+        if v and env == "production":
+            raise ValueError(
+                "LOCAL_MODE=true is not allowed when ENVIRONMENT=production. "
+                "This flag disables all authentication. "
+                "Remove LOCAL_MODE or set ENVIRONMENT=development."
+            )
+        return v
 
     @property
     def cors_origins_list(self) -> list[str]:

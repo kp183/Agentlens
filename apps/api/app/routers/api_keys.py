@@ -24,6 +24,8 @@ from app.models.project import Project
 from app.models.user import User
 from app.schemas.orgs import APIKeyCreate, APIKeyCreatedResponse, APIKeyResponse
 from app.services.api_keys import generate_api_key, get_key_prefix
+from app.redis_client import get_redis
+import redis.asyncio as aioredis
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1", tags=["api-keys"])
@@ -113,6 +115,7 @@ async def revoke_api_key(
     key_id: uuid.UUID,
     user: User = Depends(require_clerk_user),
     db: AsyncSession = Depends(get_db),
+    redis_client: aioredis.Redis = Depends(get_redis),
 ) -> None:
     """Revoke an API key by setting revoked_at = now()."""
     result = await db.execute(select(APIKey).where(APIKey.id == key_id))
@@ -123,6 +126,12 @@ async def revoke_api_key(
     await _assert_project_access(db, api_key.project_id, user.id)
 
     api_key.revoked_at = datetime.now(timezone.utc)
+
+    # Invalidate the Redis cache entry immediately
+    # so the revoked key stops working without waiting for TTL
+    cache_key = f"apikey:{api_key.key_hash}"
+    await redis_client.delete(cache_key)
+
     await db.commit()
 
     logger.info(

@@ -215,58 +215,26 @@ agentlens/
 
 ## 🚀 Quick Start
 
-### Prerequisites
-
-| Tool | Version | Purpose |
-|------|---------|---------|
-| Docker & Docker Compose | Latest | Container orchestration |
-| Git | Any | Clone the repository |
-
-> **Note:** Python and Node.js are only needed if you want to develop outside Docker. The Docker setup includes everything.
-
-### 1. Clone & Configure
-
 ```bash
-git clone https://github.com/kp183/l.git
-cd l
-cp .env.example .env
-```
-
-Edit `.env` and fill in your **Clerk** keys (get them free at [clerk.com](https://clerk.com)):
-
-```env
-CLERK_SECRET_KEY=sk_test_your_secret_key
-CLERK_PUBLISHABLE_KEY=pk_test_your_publishable_key
-CLERK_JWKS_URL=https://your-app.clerk.accounts.dev/.well-known/jwks.json
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_your_publishable_key
-```
-
-### 2. Launch Everything
-
-```bash
+git clone https://github.com/kp183/agentlens.git
+cd agentlens
+cp .env.local.example .env   # works immediately, no accounts needed
 docker compose up --build
+# Dashboard at http://localhost:3000
 ```
-
-This starts **4 services** in a single command:
-
-| Service | URL | Description |
-|---------|-----|-------------|
-| **PostgreSQL 16** | `localhost:5432` | Persistent data store |
-| **Redis 7** | `localhost:6379` | Cache, rate-limiting, WebSocket pub/sub |
-| **FastAPI Backend** | `http://localhost:8000` | API server with hot-reload |
-| **Next.js Dashboard** | `http://localhost:3000` | Interactive trace viewer |
-
-### 3. Verify Health
 
 ```bash
-# Backend health check
-curl http://localhost:8000/health
-# → {"status": "ok", "version": "0.1.0"}
-
-# Readiness check (DB + Redis)
-curl http://localhost:8000/ready
-# → {"status": "ok", "database": "ok", "redis": "ok"}
+pip install agentlens
 ```
+
+```python
+import agentlens as al
+al.init(api_key="local-dev-key", base_url="http://localhost:8000")
+al.instrument_openai()
+# Your traces appear at http://localhost:3000
+```
+
+For production deployment and multi-tenant authentication using Clerk, see [docs/production-setup.md](file:///c:/Users/kp294/jayganesh/agentlens/docs/production-setup.md).
 
 ---
 

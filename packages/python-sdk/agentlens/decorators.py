@@ -86,18 +86,59 @@ def trace(name: Optional[str] = None, tags: Optional[List[str]] = None) -> Calla
     return decorator
 
 
+class Span:
+    def __init__(self, id: str, trace_id: str, parent_span_id: Optional[str] = None):
+        self.id = id
+        self.trace_id = trace_id
+        self.parent_span_id = parent_span_id
+        self.metadata = {}
+        self.input = None
+        self.output = None
+        self.input_tokens = None
+        self.output_tokens = None
+        self.model = None
+        self.provider = None
+
+    def set_metadata(self, key_or_dict: Any, value: Any = None):
+        if isinstance(key_or_dict, dict):
+            for k, v in key_or_dict.items():
+                self._set_key(k, v)
+        else:
+            self._set_key(key_or_dict, value)
+
+    def _set_key(self, key: str, value: Any):
+        if key == "input_tokens":
+            self.input_tokens = value
+        elif key == "output_tokens":
+            self.output_tokens = value
+        elif key == "model":
+            self.model = value
+        elif key == "provider":
+            self.provider = value
+        else:
+            self.metadata[key] = value
+
+    def set_output(self, output: Any):
+        self.output = output
+
+    def set_input(self, input_val: Any):
+        self.input = input_val
+
+
 @contextmanager
 def span(name: str, span_type: str = "custom", tags: Optional[List[str]] = None):
     """Context manager to mark a block of code as a span."""
     import agentlens
     if agentlens._global_client is None or not agentlens._global_client.enabled:
-        yield
+        yield Span(id="", trace_id="")
         return
 
+    # Check or generate a root trace context if none exists
     trace_id = get_trace_id()
+    trace_token = None
     if not trace_id:
-        yield
-        return
+        trace_id = str(uuid.uuid4())
+        trace_token = set_trace_id(trace_id)
 
     parent_span_id = get_span_id()
     span_id = str(uuid.uuid4())
@@ -112,8 +153,10 @@ def span(name: str, span_type: str = "custom", tags: Optional[List[str]] = None)
     error_message = None
     error_stack = None
 
+    s = Span(id=span_id, trace_id=trace_id, parent_span_id=parent_span_id)
+
     try:
-        yield
+        yield s
     except Exception as e:
         status = "error"
         error_type = type(e).__name__
@@ -143,6 +186,23 @@ def span(name: str, span_type: str = "custom", tags: Optional[List[str]] = None)
                 "error_stack": error_stack,
             })
 
+        if s.input is not None:
+            span_payload["input"] = s.input
+        if s.output is not None:
+            span_payload["output"] = s.output
+        if s.metadata:
+            span_payload["metadata"] = s.metadata
+        if s.input_tokens is not None:
+            span_payload["input_tokens"] = s.input_tokens
+        if s.output_tokens is not None:
+            span_payload["output_tokens"] = s.output_tokens
+        if s.model is not None:
+            span_payload["model"] = s.model
+        if s.provider is not None:
+            span_payload["provider"] = s.provider
+
         agentlens._global_client._safe_enqueue(span_payload)
 
         _current_span_id.reset(span_token)
+        if trace_token:
+            _current_trace_id.reset(trace_token)

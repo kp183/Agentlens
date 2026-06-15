@@ -21,6 +21,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.exceptions import AuthenticationError, AuthorizationError, RateLimitError
 from app.models.api_key import APIKey
+from app.models.org import OrgMember, Organization
 from app.models.project import Project
 from app.models.user import User
 from app.redis_client import get_redis
@@ -60,6 +61,58 @@ async def _get_jwks() -> dict:
 _API_KEY_CACHE_TTL = 300  # seconds
 
 
+async def _get_or_create_local_dev_resources(db: AsyncSession) -> tuple[User, Project]:
+    """Ensure that the default user, organization, membership, and project exist in database."""
+    # 1. Ensure local dev user exists
+    user_result = await db.execute(
+        select(User).where(User.clerk_id == "local-dev-user")
+    )
+    user = user_result.scalar_one_or_none()
+    if not user:
+        user = User(clerk_id="local-dev-user", email="dev@localhost", name="Local Dev User")
+        db.add(user)
+        await db.flush()
+
+    # 2. Ensure default organization exists
+    org_result = await db.execute(
+        select(Organization).where(Organization.slug == "local-development")
+    )
+    org = org_result.scalar_one_or_none()
+    if not org:
+        org = Organization(name="Local Development", slug="local-development")
+        db.add(org)
+        await db.flush()
+
+    # 3. Ensure OrgMember membership exists
+    member_result = await db.execute(
+        select(OrgMember).where(
+            OrgMember.org_id == org.id,
+            OrgMember.user_id == user.id
+        )
+    )
+    member = member_result.scalar_one_or_none()
+    if not member:
+        member = OrgMember(org_id=org.id, user_id=user.id, role="owner")
+        db.add(member)
+        await db.flush()
+
+    # 4. Ensure default project exists
+    project_result = await db.execute(
+        select(Project).where(
+            Project.org_id == org.id,
+            Project.slug == "my-first-agent"
+        )
+    )
+    project = project_result.scalar_one_or_none()
+    if not project:
+        project = Project(org_id=org.id, name="My First Agent", slug="my-first-agent")
+        db.add(project)
+        await db.flush()
+
+    await db.commit()
+    return user, project
+
+
 async def require_api_key(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
@@ -73,6 +126,10 @@ async def require_api_key(
 
     Raises AuthenticationError on any failure.
     """
+    if settings.local_mode:
+        _, project = await _get_or_create_local_dev_resources(db)
+        return project
+
     if not credentials:
         raise AuthenticationError("Missing Authorization header")
 
@@ -107,7 +164,7 @@ async def require_api_key(
     await db.execute(
         update(APIKey)
         .where(APIKey.id == api_key_obj.id)
-        .values(last_used_at=__import__("datetime").datetime.utcnow())
+        .values(last_used_at=datetime.now(timezone.utc))
     )
 
     # Cache the project_id
@@ -133,6 +190,10 @@ async def require_clerk_user(
 
     Raises AuthenticationError on any failure.
     """
+    if settings.local_mode:
+        user, _ = await _get_or_create_local_dev_resources(db)
+        return user
+
     if not credentials:
         raise AuthenticationError("Missing Authorization header")
 
@@ -144,7 +205,7 @@ async def require_clerk_user(
             token,
             jwks,
             algorithms=["RS256"],
-            options={"verify_aud": False},
+            options={"verify_aud": False, "verify_exp": True},
         )
     except JWTError as exc:
         # On key rotation, clear cache and retry once
@@ -157,10 +218,11 @@ async def require_clerk_user(
                 token,
                 jwks,
                 algorithms=["RS256"],
-                options={"verify_aud": False},
+                options={"verify_aud": False, "verify_exp": True},
             )
-        except JWTError:
-            raise AuthenticationError(f"Invalid JWT: {exc}") from exc
+        except JWTError as inner_exc:
+            logger.warning("JWT verification failed: %s", inner_exc)
+            raise AuthenticationError("Invalid or expired token") from inner_exc
 
     clerk_id: str = payload.get("sub", "")
     if not clerk_id:
@@ -194,6 +256,14 @@ async def require_clerk_user(
 
 _RATE_LIMIT_WINDOW = 60  # seconds
 
+_RATE_LIMIT_LUA = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+"""
+
 
 async def check_rate_limit(
     key_hash: str,
@@ -207,9 +277,9 @@ async def check_rate_limit(
     minute_bucket = int(time.time() // _RATE_LIMIT_WINDOW)
     redis_key = f"ratelimit:{key_hash}:{minute_bucket}"
 
-    count = await redis.incr(redis_key)
-    if count == 1:
-        await redis.expire(redis_key, _RATE_LIMIT_WINDOW)
+    count = await redis.eval(
+        _RATE_LIMIT_LUA, 1, redis_key, str(_RATE_LIMIT_WINDOW)
+    )
 
     if count > limit:
         raise RateLimitError(

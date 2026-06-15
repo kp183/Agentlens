@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { useAuth, useUser, UserButton } from "@clerk/nextjs";
+import { useAuth, useUser, UserButton } from "@/lib/auth";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
@@ -48,12 +48,29 @@ export default function DashboardPage() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
+
+
   const activeProjectId = searchParams.get("project_id");
   const activeTraceId = searchParams.get("trace_id");
 
   // Local navigation states
   const [activeTab, setActiveTab] = useState<"traces" | "apikeys">("traces");
   
+  // Active Org state
+  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+
+  // Modals for creating organization & project
+  const [showOrgModal, setShowOrgModal] = useState(false);
+  const [newOrgName, setNewOrgName] = useState("");
+  const [showProjectModal, setShowProjectModal] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+
+  // Modals for deleting organization & project
+  const [showDeleteOrgModal, setShowDeleteOrgModal] = useState(false);
+  const [deleteOrgConfirmText, setDeleteOrgConfirmText] = useState("");
+  const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false);
+  const [deleteProjectConfirmText, setDeleteProjectConfirmText] = useState("");
+
   // Trace filters
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [modelFilter, setModelFilter] = useState<string>("all");
@@ -66,13 +83,14 @@ export default function DashboardPage() {
   const [newKeyName, setNewKeyName] = useState("");
   const [justCreatedKey, setJustCreatedKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [guideTab, setGuideTab] = useState<"install" | "env" | "code">("install");
 
   // WebSocket connection for streaming spans
   const [wsSpans, setWsSpans] = useState<Span[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
 
   // 1. Fetch User's Orgs
-  const { data: orgs, isLoading: orgsLoading } = useQuery<Organization[]>({
+  const { data: orgs, isLoading: orgsLoading, isError: orgsError } = useQuery<Organization[]>({
     queryKey: ["orgs"],
     queryFn: async () => {
       const token = await getToken();
@@ -82,7 +100,14 @@ export default function DashboardPage() {
     enabled: !!userId,
   });
 
-  const activeOrg = orgs?.[0];
+  // Sync activeOrgId when orgs load
+  useEffect(() => {
+    if (orgs && orgs.length > 0 && !activeOrgId) {
+      setActiveOrgId(orgs[0].id);
+    }
+  }, [orgs, activeOrgId]);
+
+  const activeOrg = orgs?.find(o => o.id === activeOrgId) || orgs?.[0];
 
   // 2. Fetch Projects for active org
   const { data: projects, isLoading: projectsLoading } = useQuery<Project[]>({
@@ -97,12 +122,80 @@ export default function DashboardPage() {
 
   const activeProject = projects?.find(p => p.id === activeProjectId) || projects?.[0];
 
-  // 3. Sync project ID to URL if not set
+  // Sync project ID to URL if not set OR if activeProjectId is invalid for this project list
   useEffect(() => {
-    if (projects && projects.length > 0 && !activeProjectId) {
-      router.replace(`/dashboard?project_id=${projects[0].id}`);
+    if (projects && projects.length > 0) {
+      const isValid = projects.some(p => p.id === activeProjectId);
+      if (!activeProjectId || !isValid) {
+        router.replace(`/?project_id=${projects[0].id}`);
+      }
     }
   }, [projects, activeProjectId, router]);
+
+  // Mutations for Organization and Project creation
+  const createOrgMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const token = await getToken();
+      if (!token) throw new Error("No token");
+      const slugify = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+      return api.createOrg(name, slugify(name), token);
+    },
+    onSuccess: (newOrg) => {
+      queryClient.invalidateQueries({ queryKey: ["orgs"] });
+      setActiveOrgId(newOrg.id);
+      setShowOrgModal(false);
+      setNewOrgName("");
+    },
+  });
+
+  const createProjectMutation = useMutation({
+    mutationFn: async ({ orgId, name }: { orgId: string, name: string }) => {
+      const token = await getToken();
+      if (!token) throw new Error("No token");
+      const slugify = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+      return api.createProject(orgId, name, slugify(name), token);
+    },
+    onSuccess: (newProject) => {
+      queryClient.invalidateQueries({ queryKey: ["projects", activeOrg?.id] });
+      router.push(`/?project_id=${newProject.id}`);
+      setShowProjectModal(false);
+      setNewProjectName("");
+    },
+  });
+
+  const deleteOrgMutation = useMutation({
+    mutationFn: async (orgId: string) => {
+      const token = await getToken();
+      if (!token) throw new Error("No token");
+      return api.deleteOrg(orgId, token);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orgs"] });
+      const remainingOrgs = orgs?.filter(o => o.id !== activeOrg?.id);
+      if (remainingOrgs && remainingOrgs.length > 0) {
+        setActiveOrgId(remainingOrgs[0].id);
+      } else {
+        setActiveOrgId(null);
+      }
+      setShowDeleteOrgModal(false);
+      setDeleteOrgConfirmText("");
+      router.push("/");
+    },
+  });
+
+  const deleteProjectMutation = useMutation({
+    mutationFn: async (projectId: string) => {
+      const token = await getToken();
+      if (!token) throw new Error("No token");
+      return api.deleteProject(projectId, token);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", activeOrg?.id] });
+      setShowDeleteProjectModal(false);
+      setDeleteProjectConfirmText("");
+      router.push("/");
+    },
+  });
 
   // Compute start date based on filter
   const getStartDateISO = () => {
@@ -121,7 +214,8 @@ export default function DashboardPage() {
     queryFn: async () => {
       const token = await getToken();
       if (!token) throw new Error("No token");
-      return api.listTraces(activeProject!.id, token, {
+      if (!activeProject) return { data: [], meta: { total: 0, limit: 10 }, next_cursor: null };
+      return api.listTraces(activeProject.id, token, {
         status: statusFilter,
         model: modelFilter,
         startDate: getStartDateISO(),
@@ -136,7 +230,7 @@ export default function DashboardPage() {
     return Array.from(
       new Set(
         tracesData.data
-          .map(t => t.name.includes("(") ? t.name.split("(")[1].replace(")", "").trim() : null)
+          .map(t => (t.name && t.name.includes("(")) ? t.name.split("(")[1].replace(")", "").trim() : null)
           .filter((val): val is string => Boolean(val))
       )
     );
@@ -148,7 +242,8 @@ export default function DashboardPage() {
     queryFn: async () => {
       const token = await getToken();
       if (!token) throw new Error("No token");
-      return api.listAPIKeys(activeProject!.id, token);
+      if (!activeProject) return [];
+      return api.listAPIKeys(activeProject.id, token);
     },
     enabled: !!activeProject && activeTab === "apikeys",
   });
@@ -178,7 +273,7 @@ export default function DashboardPage() {
   // Real-time WebSocket connection for running traces
   useEffect(() => {
     if (!activeTraceId || !traceDetail || traceDetail.status !== "running") {
-      setWsSpans([]);
+      setWsSpans(prev => prev.length > 0 ? [] : prev);
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
@@ -194,10 +289,14 @@ export default function DashboardPage() {
 
         const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
         const wsHost = window.location.host.replace("3000", "8000");
-        const wsUrl = `${wsProto}//${wsHost}/v1/ws/traces/${activeTraceId}?token=${token}`;
+        const wsUrl = `${wsProto}//${wsHost}/v1/ws/traces/${activeTraceId}`;
 
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
+
+        ws.onopen = () => {
+          ws.send(JSON.stringify({ token }));
+        };
 
         ws.onmessage = (event) => {
           try {
@@ -244,7 +343,8 @@ export default function DashboardPage() {
     mutationFn: async (name: string) => {
       const token = await getToken();
       if (!token) throw new Error("No token");
-      return api.createAPIKey(activeProject!.id, name, token);
+      if (!activeProject) throw new Error("No active project");
+      return api.createAPIKey(activeProject.id, name, token);
     },
     onSuccess: (data) => {
       setJustCreatedKey(data.raw_key || null);
@@ -290,7 +390,7 @@ export default function DashboardPage() {
   };
 
   // Reconstruct tree flat nodes with indentation depth
-  const getFlatSpanNodes = () => {
+  const flatSpanNodes = React.useMemo(() => {
     // 1. If we have live spans from WS, combine them with static fetch
     let flatSpans: Span[] = [];
     if (traceSpansData?.data) {
@@ -359,9 +459,7 @@ export default function DashboardPage() {
     }
 
     return flatResult;
-  };
-
-  const flatSpanNodes = getFlatSpanNodes();
+  }, [traceSpansData, wsSpans]);
   const selectedSpanObj = flatSpanNodes.find(node => node.span.id === selectedSpanId)?.span || flatSpanNodes[0]?.span;
 
   // Selected Span tab
@@ -396,25 +494,90 @@ export default function DashboardPage() {
           </span>
         </div>
 
-        {/* Project Switcher */}
+        {/* Organization Switcher */}
         <div className="p-4 border-b border-slate-900">
-          <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-2">Project</label>
-          <div className="relative">
-            <select
-              value={activeProject?.id || ""}
-              onChange={(e) => {
-                router.push(`/dashboard?project_id=${e.target.value}`);
-                // Clear trace selection
-                setWsSpans([]);
-              }}
-              className="w-full bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition"
+          <div className="flex justify-between items-center mb-2">
+            <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">Organization</label>
+            <button 
+              onClick={() => setShowOrgModal(true)}
+              className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 flex items-center space-x-0.5"
             >
-              {projects?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
+              <Plus className="h-3 w-3" />
+              <span>New</span>
+            </button>
+          </div>
+          <div className="flex items-center space-x-2">
+            <select
+              value={activeOrg?.id || ""}
+              onChange={(e) => {
+                setActiveOrgId(e.target.value);
+                setWsSpans([]);
+                router.push("/");
+              }}
+              className="flex-1 bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition min-w-0"
+            >
+              {orgs?.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
                 </option>
               ))}
             </select>
+            {activeOrg && (
+              <button
+                onClick={() => setShowDeleteOrgModal(true)}
+                className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl border border-slate-800/80 hover:border-red-500/20 transition shrink-0"
+                title="Delete organization"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Project Switcher */}
+        <div className="p-4 border-b border-slate-900">
+          <div className="flex justify-between items-center mb-2">
+            <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">Project</label>
+            {activeOrg && (
+              <button 
+                onClick={() => setShowProjectModal(true)}
+                className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 flex items-center space-x-0.5"
+              >
+                <Plus className="h-3 w-3" />
+                <span>New</span>
+              </button>
+            )}
+          </div>
+          <div className="flex items-center space-x-2">
+            <select
+              value={activeProject?.id || ""}
+              onChange={(e) => {
+                router.push(`/?project_id=${e.target.value}`);
+                setWsSpans([]);
+              }}
+              className="flex-1 bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 transition min-w-0"
+              disabled={!activeOrg || !projects || projects.length === 0}
+            >
+              {projects && projects.length > 0 ? (
+                projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))
+              ) : (
+                <option value="">No projects</option>
+              )}
+            </select>
+            {activeProject && (
+              <button
+                onClick={() => setShowDeleteProjectModal(true)}
+                className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl border border-slate-800/80 hover:border-red-500/20 transition shrink-0"
+                title="Delete project"
+                disabled={!activeOrg || !projects || projects.length === 0}
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -423,9 +586,11 @@ export default function DashboardPage() {
           <button
             onClick={() => {
               setActiveTab("traces");
-              router.push(`/dashboard?project_id=${activeProject?.id}`);
+              router.push(`/?project_id=${activeProject?.id || ""}`);
             }}
+            disabled={!activeProject}
             className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-medium transition ${
+              !activeProject ? "opacity-50 cursor-not-allowed text-slate-600" :
               activeTab === "traces" && !activeTraceId
                 ? "bg-indigo-600/10 text-indigo-400 border border-indigo-500/25"
                 : "text-slate-400 hover:bg-slate-900/40 hover:text-slate-200"
@@ -438,10 +603,11 @@ export default function DashboardPage() {
           <button
             onClick={() => {
               setActiveTab("apikeys");
-              // Clear trace detail from url when switching to api keys
-              router.push(`/dashboard?project_id=${activeProject?.id}`);
+              router.push(`/?project_id=${activeProject?.id || ""}`);
             }}
+            disabled={!activeProject}
             className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-medium transition ${
+              !activeProject ? "opacity-50 cursor-not-allowed text-slate-600" :
               activeTab === "apikeys"
                 ? "bg-indigo-600/10 text-indigo-400 border border-indigo-500/25"
                 : "text-slate-400 hover:bg-slate-900/40 hover:text-slate-200"
@@ -475,7 +641,7 @@ export default function DashboardPage() {
             {activeTraceId && (
               <button
                 onClick={() => {
-                  router.push(`/dashboard?project_id=${activeProject?.id}`);
+                  router.push(`/?project_id=${activeProject?.id}`);
                   setWsSpans([]);
                 }}
                 className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white transition"
@@ -488,24 +654,68 @@ export default function DashboardPage() {
             </h1>
           </div>
           <div className="flex items-center space-x-4">
-            <span className="text-xs text-slate-500 bg-slate-900 border border-slate-800/80 px-3 py-1.5 rounded-full">
-              Org: <span className="text-slate-300 font-medium">{activeOrg?.name}</span>
-            </span>
+            {activeOrg && (
+              <span className="text-xs text-slate-500 bg-slate-900 border border-slate-800/80 px-3 py-1.5 rounded-full">
+                Org: <span className="text-slate-300 font-medium">{activeOrg.name}</span>
+              </span>
+            )}
           </div>
         </header>
 
         {/* Body content based on tab / activeTraceId */}
         <div className="flex-1 overflow-y-auto flex flex-col">
+          {orgsError && (
+            <div className="bg-red-500/10 border-b border-red-500/20 px-8 py-3 flex items-center space-x-3 text-red-400 text-xs font-medium shrink-0 animate-fadeIn">
+              <AlertCircle className="h-4.5 w-4.5 animate-pulse" />
+              <span>Backend API is offline. Make sure the FastAPI server is running on http://localhost:8000 (run `docker compose up`).</span>
+            </div>
+          )}
 
-          {/* 1. API KEYS VIEW */}
-          {activeTab === "apikeys" && (
-            <div className="p-8 max-w-4xl w-full mx-auto space-y-8">
-              <div className="space-y-2">
-                <h2 className="text-lg font-semibold text-slate-200">API Credentials</h2>
-                <p className="text-sm text-slate-400">
-                  Manage API keys for the project <span className="text-indigo-400">{activeProject?.name}</span>. These keys are used to authenticate your AI agent SDK clients.
+          {!activeOrg ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4">
+              <Building2 className="h-12 w-12 text-slate-700 animate-pulse" />
+              <div className="space-y-1">
+                <h2 className="text-md font-semibold text-slate-300">No Organization Selected</h2>
+                <p className="text-xs text-slate-500 max-w-sm">
+                  Create an organization from the sidebar to set up projects, API keys, and monitor traces.
                 </p>
               </div>
+              <button
+                onClick={() => setShowOrgModal(true)}
+                className="flex items-center space-x-2 py-2 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition shadow-lg shadow-indigo-600/10"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Create Organization</span>
+              </button>
+            </div>
+          ) : !activeProject ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4">
+              <FolderGit className="h-12 w-12 text-slate-700 animate-pulse" />
+              <div className="space-y-1">
+                <h2 className="text-md font-semibold text-slate-300">No Project Selected</h2>
+                <p className="text-xs text-slate-500 max-w-sm">
+                  Create a project under the organization <span className="text-indigo-400 font-medium">{activeOrg.name}</span> to scope your traces.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowProjectModal(true)}
+                className="flex items-center space-x-2 py-2 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition shadow-lg shadow-indigo-600/10"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Create Project</span>
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* 1. API KEYS VIEW */}
+              {activeTab === "apikeys" && (
+                <div className="p-8 max-w-4xl w-full mx-auto space-y-8">
+                  <div className="space-y-2">
+                    <h2 className="text-lg font-semibold text-slate-200">API Credentials</h2>
+                    <p className="text-sm text-slate-400">
+                      Manage API keys for the project <span className="text-indigo-400">{activeProject.name}</span>. These keys are used to authenticate your AI agent SDK clients.
+                    </p>
+                  </div>
 
               {/* API Key Creation Form */}
               <div className="p-6 rounded-2xl bg-slate-900/30 border border-slate-900">
@@ -577,6 +787,107 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* SDK Integration Guide */}
+              <div className="p-6 rounded-2xl bg-slate-900/30 border border-slate-900 space-y-4">
+                <div className="space-y-1">
+                  <h3 className="text-sm font-semibold text-slate-200">SDK Integration Guide</h3>
+                  <p className="text-xs text-slate-400">
+                    Follow these steps to connect your Python agent codebase to AgentLens.
+                  </p>
+                </div>
+
+                {/* Tab Header */}
+                <div className="flex border-b border-slate-805 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setGuideTab("install")}
+                    className={`pb-2.5 px-4 font-semibold transition ${
+                      guideTab === "install" ? "border-b-2 border-indigo-500 text-indigo-400" : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    1. Install SDK
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGuideTab("env")}
+                    className={`pb-2.5 px-4 font-semibold transition ${
+                      guideTab === "env" ? "border-b-2 border-indigo-500 text-indigo-400" : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    2. Setup Env
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGuideTab("code")}
+                    className={`pb-2.5 px-4 font-semibold transition ${
+                      guideTab === "code" ? "border-b-2 border-indigo-500 text-indigo-400" : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    3. Code Structure
+                  </button>
+                </div>
+
+                {/* Tab Content */}
+                <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 text-xs text-slate-300">
+                  {guideTab === "install" && (
+                    <div className="space-y-2">
+                      <p className="text-slate-400">Install the AgentLens Python SDK in your project:</p>
+                      <pre className="p-3 rounded-lg bg-slate-950 border border-slate-900 font-mono text-indigo-300 select-all">
+                        pip install agentlens
+                      </pre>
+                    </div>
+                  )}
+
+                  {guideTab === "env" && (
+                    <div className="space-y-2">
+                      <p className="text-slate-400">Configure your credentials in a <code className="text-slate-200 bg-slate-900 px-1 py-0.5 rounded font-mono">.env</code> file in your agent codebase root:</p>
+                      <pre className="p-3 rounded-lg bg-slate-950 border border-slate-900 font-mono text-slate-300 select-all">
+{`# Add this to your project .env file
+AGENTLENS_API_KEY="${justCreatedKey || "your_api_key_here"}"
+AGENTLENS_BASE_URL="${typeof window !== "undefined" ? window.location.protocol + "//" + window.location.hostname + ":8000" : "http://localhost:8000"}"`}
+                      </pre>
+                    </div>
+                  )}
+
+                  {guideTab === "code" && (
+                    <div className="space-y-2">
+                      <p className="text-slate-400">Initialize the SDK at entrypoint and wrap your execution in traces/spans:</p>
+                      <pre className="p-3 rounded-lg bg-slate-955 border border-slate-900 font-mono text-slate-300 overflow-x-auto whitespace-pre leading-relaxed max-h-[300px] overflow-y-auto select-all text-[11px]">
+{`import os
+import agentlens as al
+from openai import OpenAI
+
+# Initialize client using environment variables
+al.init(
+    api_key=os.getenv("AGENTLENS_API_KEY"),
+    base_url=os.getenv("AGENTLENS_BASE_URL", "http://localhost:8000")
+)
+
+# Auto-instrument OpenAI / Anthropic calls
+al.instrument_openai()
+
+# Decorate your main agent loop to create a trace root
+@al.trace(name="My First Agent")
+def run_agent(prompt: str):
+    # Wrap sub-operations in nested spans
+    with al.span(name="Database Lookup", span_type="tool") as s:
+        s.set_input({"query": "lookup user"})
+        # ... fetch data ...
+        s.set_output({"status": "verified"})
+
+    # Instrument OpenAI calls automatically
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.choices[0].message.content`}
+                      </pre>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* API Keys List */}
@@ -742,7 +1053,7 @@ al.instrument_openai()`}
                       tracesData?.data?.map((trace) => (
                         <tr 
                           key={trace.id}
-                          onClick={() => router.push(`/dashboard?project_id=${activeProject?.id}&trace_id=${trace.id}`)}
+                          onClick={() => router.push(`/?project_id=${activeProject?.id}&trace_id=${trace.id}`)}
                           className="hover:bg-slate-900/30 cursor-pointer transition duration-150"
                         >
                           <td className="px-6 py-4">
@@ -764,7 +1075,7 @@ al.instrument_openai()`}
                             </div>
                           </td>
                           <td className="px-6 py-4">
-                            <div className="font-semibold text-slate-200">{trace.name}</div>
+                            <div className="font-semibold text-slate-200">{trace.name || "Active Trace"}</div>
                             <div className="text-[10px] text-slate-500 font-mono mt-0.5 break-all select-all">{trace.id}</div>
                           </td>
                           <td className="px-6 py-4 text-slate-400 font-medium">
@@ -777,12 +1088,12 @@ al.instrument_openai()`}
                             {trace.duration_ms ? `${(trace.duration_ms / 1000).toFixed(2)}s` : "—"}
                           </td>
                           <td className="px-6 py-4 text-slate-300 font-mono">
-                            {trace.total_cost_usd === 0 ? "$0.00" :
-                             trace.total_cost_usd < 0.01 ? `$${trace.total_cost_usd.toFixed(4)}` :
-                             `$${trace.total_cost_usd.toFixed(2)}`}
+                            {trace.total_cost_usd === null || trace.total_cost_usd === undefined || trace.total_cost_usd === 0 ? "$0.00" :
+                             trace.total_cost_usd < 0.01 ? `$${Number(trace.total_cost_usd).toFixed(4)}` :
+                             `$${Number(trace.total_cost_usd).toFixed(2)}`}
                           </td>
                           <td className="px-6 py-4 font-mono text-slate-400 text-xs">
-                            {trace.total_tokens.toLocaleString()}
+                            {(trace.total_tokens ?? 0).toLocaleString()}
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex items-center space-x-1.5">
@@ -811,7 +1122,7 @@ al.instrument_openai()`}
               <div className="px-8 py-5 border-b border-slate-900 bg-slate-950/40 shrink-0 flex flex-wrap items-center justify-between gap-4">
                 <div className="space-y-1">
                   <div className="flex items-center space-x-3">
-                    <h2 className="text-lg font-bold text-slate-100">{traceDetail.name}</h2>
+                    <h2 className="text-lg font-bold text-slate-100">{traceDetail.name || "Active Trace"}</h2>
                     <span className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider ${
                       traceDetail.status === "success" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
                       traceDetail.status === "error" ? "bg-rose-500/10 text-rose-400 border border-rose-500/20" : 
@@ -844,9 +1155,9 @@ al.instrument_openai()`}
                     <div>
                       <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">Total Cost</div>
                       <div className="font-semibold text-slate-200 font-mono">
-                        {traceDetail.total_cost_usd === 0 ? "$0.00" :
-                         traceDetail.total_cost_usd < 0.01 ? `$${traceDetail.total_cost_usd.toFixed(4)}` :
-                         `$${traceDetail.total_cost_usd.toFixed(2)}`}
+                        {traceDetail.total_cost_usd === null || traceDetail.total_cost_usd === undefined || traceDetail.total_cost_usd === 0 ? "$0.00" :
+                         traceDetail.total_cost_usd < 0.01 ? `$${Number(traceDetail.total_cost_usd).toFixed(4)}` :
+                         `$${Number(traceDetail.total_cost_usd).toFixed(2)}`}
                       </div>
                     </div>
                   </div>
@@ -857,7 +1168,7 @@ al.instrument_openai()`}
                     <div>
                       <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">Tokens</div>
                       <div className="font-semibold text-slate-200 font-mono">
-                        {traceDetail.total_tokens.toLocaleString()}
+                        {(traceDetail.total_tokens ?? 0).toLocaleString()}
                       </div>
                     </div>
                   </div>
@@ -1145,9 +1456,305 @@ al.instrument_openai()`}
 
             </div>
           )}
+          
+            </>
+          )}
 
         </div>
       </main>
+
+      {/* ── CREATE ORGANIZATION MODAL ── */}
+      {showOrgModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-base font-semibold text-slate-100">Create New Organization</h3>
+              <button onClick={() => setShowOrgModal(false)} className="text-slate-400 hover:text-white transition">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-400">
+              Organizations group projects together. Team members can be invited to share access.
+            </p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newOrgName.trim()) return;
+                createOrgMutation.mutate(newOrgName);
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">Org Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Acme Corporation"
+                  value={newOrgName}
+                  onChange={(e) => setNewOrgName(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-indigo-500 transition"
+                  required
+                  autoFocus
+                />
+              </div>
+              {createOrgMutation.isError && (
+                <p className="text-xs text-red-400">{(createOrgMutation.error as Error).message}</p>
+              )}
+              <div className="flex justify-end space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOrgModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-850 text-slate-350 hover:bg-slate-850 text-sm font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createOrgMutation.isPending}
+                  className="flex items-center space-x-2 py-2 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition shadow-lg shadow-indigo-600/15"
+                >
+                  {createOrgMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <span>Create Organization</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── CREATE PROJECT MODAL ── */}
+      {showProjectModal && activeOrg && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-base font-semibold text-slate-100">Create New Project</h3>
+              <button onClick={() => setShowProjectModal(false)} className="text-slate-400 hover:text-white transition">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-400">
+              Create a project under <span className="text-indigo-400 font-medium">{activeOrg.name}</span>. A project scopes api keys, traces, and metrics.
+            </p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newProjectName.trim()) return;
+                createProjectMutation.mutate({ orgId: activeOrg.id, name: newProjectName });
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">Project Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Customer Support Agent"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-indigo-500 transition"
+                  required
+                  autoFocus
+                />
+              </div>
+              {createProjectMutation.isError && (
+                <p className="text-xs text-red-400">{(createProjectMutation.error as Error).message}</p>
+              )}
+              <div className="flex justify-end space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowProjectModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-850 text-slate-350 hover:bg-slate-850 text-sm font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createProjectMutation.isPending}
+                  className="flex items-center space-x-2 py-2 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition shadow-lg shadow-indigo-600/15"
+                >
+                  {createProjectMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <span>Create Project</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── DELETE ORGANIZATION MODAL ── */}
+      {showDeleteOrgModal && activeOrg && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-base font-semibold text-rose-400 flex items-center space-x-2">
+                <AlertCircle className="h-5 w-5 text-rose-500 animate-pulse" />
+                <span>Delete Organization</span>
+              </h3>
+              <button 
+                onClick={() => {
+                  setShowDeleteOrgModal(false);
+                  setDeleteOrgConfirmText("");
+                }} 
+                className="text-slate-400 hover:text-white transition"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="p-4 bg-rose-500/5 border border-rose-500/10 rounded-xl text-xs text-rose-300 space-y-1.5 leading-relaxed font-sans">
+              <p className="font-semibold text-rose-455">Warning: This action is permanent and irreversible!</p>
+              <p>
+                Deleting the organization <span className="text-white font-semibold">{activeOrg.name}</span> will permanently delete:
+              </p>
+              <ul className="list-disc list-inside space-y-0.5 text-rose-350/90 ml-1">
+                <li>All projects under this organization</li>
+                <li>All API credentials/ingestion keys</li>
+                <li>All trace logs and span execution steps</li>
+                <li>All team member access controls</li>
+              </ul>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (deleteOrgConfirmText !== activeOrg.name) return;
+                deleteOrgMutation.mutate(activeOrg.id);
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">
+                  Type <span className="text-slate-200 select-all font-mono bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">{activeOrg.name}</span> to confirm
+                </label>
+                <input
+                  type="text"
+                  placeholder="Type organization name..."
+                  value={deleteOrgConfirmText}
+                  onChange={(e) => setDeleteOrgConfirmText(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-rose-500 transition"
+                  required
+                  autoFocus
+                />
+              </div>
+              {deleteOrgMutation.isError && (
+                <p className="text-xs text-red-400 font-sans">{(deleteOrgMutation.error as Error).message}</p>
+              )}
+              <div className="flex justify-end space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDeleteOrgModal(false);
+                    setDeleteOrgConfirmText("");
+                  }}
+                  className="px-4 py-2 rounded-xl border border-slate-850 text-slate-350 hover:bg-slate-850 text-sm font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={deleteOrgConfirmText !== activeOrg.name || deleteOrgMutation.isPending}
+                  className="flex items-center space-x-2 py-2 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition shadow-lg shadow-rose-600/15"
+                >
+                  {deleteOrgMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <span>Delete permanently</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── DELETE PROJECT MODAL ── */}
+      {showDeleteProjectModal && activeProject && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-base font-semibold text-rose-400 flex items-center space-x-2">
+                <AlertCircle className="h-5 w-5 text-rose-550 animate-pulse" />
+                <span>Delete Project</span>
+              </h3>
+              <button 
+                onClick={() => {
+                  setShowDeleteProjectModal(false);
+                  setDeleteProjectConfirmText("");
+                }} 
+                className="text-slate-400 hover:text-white transition"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="p-4 bg-rose-500/5 border border-rose-500/10 rounded-xl text-xs text-rose-300 space-y-1.5 leading-relaxed font-sans">
+              <p className="font-semibold text-rose-450">Warning: This action is permanent and irreversible!</p>
+              <p>
+                Deleting the project <span className="text-white font-semibold">{activeProject.name}</span> will permanently delete:
+              </p>
+              <ul className="list-disc list-inside space-y-0.5 text-rose-350/90 ml-1">
+                <li>All API credentials/ingestion keys for this project</li>
+                <li>All trace logs and span execution steps</li>
+              </ul>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (deleteProjectConfirmText !== activeProject.name) return;
+                deleteProjectMutation.mutate(activeProject.id);
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">
+                  Type <span className="text-slate-200 select-all font-mono bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">{activeProject.name}</span> to confirm
+                </label>
+                <input
+                  type="text"
+                  placeholder="Type project name..."
+                  value={deleteProjectConfirmText}
+                  onChange={(e) => setDeleteProjectConfirmText(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-rose-500 transition"
+                  required
+                  autoFocus
+                />
+              </div>
+              {deleteProjectMutation.isError && (
+                <p className="text-xs text-red-400 font-sans">{(deleteProjectMutation.error as Error).message}</p>
+              )}
+              <div className="flex justify-end space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDeleteProjectModal(false);
+                    setDeleteProjectConfirmText("");
+                  }}
+                  className="px-4 py-2 rounded-xl border border-slate-850 text-slate-350 hover:bg-slate-850 text-sm font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={deleteProjectConfirmText !== activeProject.name || deleteProjectMutation.isPending}
+                  className="flex items-center space-x-2 py-2 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition shadow-lg shadow-rose-600/15"
+                >
+                  {deleteProjectMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <span>Delete permanently</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

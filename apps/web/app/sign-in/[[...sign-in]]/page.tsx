@@ -22,6 +22,7 @@ export default function SignInPage() {
       <div className="relative z-10 p-2 border border-slate-900 bg-slate-900/30 rounded-2xl shadow-2xl backdrop-blur-xl">
         <SignIn
           routing="path"
+          path="/sign-in"
           appearance={{
             variables: {
               colorPrimary: "#6366f1",
