@@ -124,3 +124,26 @@ apps/api/migrations/versions/__pycache__/
 *.log
 *.tmp
 *.bak
+
+# ============================================================
+# Pre-launch release cleanup additions
+# ============================================================
+.Python
+downloads/
+wheels/
+*.pyo
+.env/
+apps/api/.env
+apps/web/.env
+apps/web/.env.local
+secrets.txt
+apps/web/.next/
+apps/web/out/
+apps/web/node_modules/
+*.code-workspace
+*.tar
+logs/
+scratch_test.py
+ws_test_delay.py
+test_trace.py
+
