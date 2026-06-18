@@ -376,7 +376,7 @@ export default function DashboardPage() {
     const offsetPercent = (offsetMs / traceDurationMs) * 100;
     
     let spanDuration = span.duration_ms;
-    if (spanDuration === null) {
+    if (spanDuration === null || spanDuration === undefined) {
       // Still running, estimate based on now
       spanDuration = Date.now() - spanStart;
     }
@@ -1196,7 +1196,7 @@ al.instrument_openai()`}
                   <div className="space-y-2">
                     {flatSpanNodes.map(({ span, depth }) => {
                       const isSelected = span.id === selectedSpanId;
-                      const metrics = getGanttMetrics(span, traceDetail.started_at, traceDetail.duration_ms);
+                      const metrics = getGanttMetrics(span, traceDetail.started_at, traceDetail.duration_ms ?? null);
 
                       return (
                         <div
@@ -1286,12 +1286,12 @@ al.instrument_openai()`}
                           <span className="text-[10px] font-mono bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded">
                             Type: {selectedSpanObj.span_type}
                           </span>
-                          {selectedSpanObj.duration_ms !== null && (
+                           {selectedSpanObj.duration_ms !== null && selectedSpanObj.duration_ms !== undefined && (
                             <span className="text-[10px] font-mono bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded">
                               Duration: {selectedSpanObj.duration_ms}ms
                             </span>
                           )}
-                          {selectedSpanObj.cost_usd !== null && selectedSpanObj.cost_usd > 0 && (
+                          {selectedSpanObj.cost_usd !== null && selectedSpanObj.cost_usd !== undefined && selectedSpanObj.cost_usd > 0 && (
                             <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded">
                               Cost: ${selectedSpanObj.cost_usd.toFixed(4)}
                             </span>

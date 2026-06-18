@@ -1,4 +1,4 @@
-import { SignUp } from "@clerk/nextjs";
+import { SignUp } from "@/lib/auth";
 import { Sparkles } from "lucide-react";
 
 export default function SignUpPage() {
