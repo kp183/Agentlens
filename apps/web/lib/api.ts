@@ -91,7 +91,13 @@ async function request(path: string, token?: string, options: RequestInit = {}) 
     let errorMsg = `API request failed: ${response.statusText}`;
     try {
       const data = await response.json();
-      errorMsg = data.detail || errorMsg;
+      if (data.error && typeof data.error.message === "string") {
+        errorMsg = data.error.message;
+      } else if (Array.isArray(data.detail)) {
+        errorMsg = data.detail.map((err: any) => `${err.loc.join(".")}: ${err.msg}`).join(", ");
+      } else if (typeof data.detail === "string") {
+        errorMsg = data.detail;
+      }
     } catch (e) {}
     throw new Error(errorMsg);
   }
