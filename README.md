@@ -128,13 +128,17 @@ AgentLens is built as a production-grade monorepo with three core components:
 agentlens/
 ├── docker-compose.yml              # Orchestrates all 4 services
 ├── Makefile                         # Developer shortcuts (make dev, make test, etc.)
+├── LICENSE                          # MIT license
 ├── .env.example                     # Template for environment variables
+├── .env.local.example               # Zero-setup local dev config (LOCAL_MODE=true)
 ├── .gitignore
 │
 ├── apps/
 │   ├── api/                         # ── FastAPI Backend ──────────────────
 │   │   ├── Dockerfile               # Python 3.11-slim container
 │   │   ├── pyproject.toml           # Dependencies & tool config (ruff, pytest)
+│   │   ├── uv.lock                  # Locked dependency versions for reproducible installs
+│   │   ├── .dockerignore            # Excludes .venv, __pycache__, etc. from Docker build context
 │   │   ├── alembic.ini              # Alembic migration config
 │   │   │
 │   │   ├── app/
@@ -181,19 +185,21 @@ agentlens/
 │   │   │   └── versions/
 │   │   │       └── 001_initial_schema.py
 │   │   │
-│   │   └── tests/                   # Backend test suite (42 tests)
-│   │       ├── unit/
+│   │   └── tests/                   # Backend test suite (43 tests)
+│   │       ├── conftest.py          # Shared pytest fixtures (mock DB, mock Redis, test client)
+│   │       │
+│   │       ├── unit/                # (contains __init__.py for pytest discovery)
 │   │       │   ├── test_api_keys.py     # Key format, hashing, uniqueness
 │   │       │   ├── test_ingest.py       # Batch limits, auth, rate limiting
 │   │       │   └── test_traces.py       # Cursor encoding, auth, tenant isolation
-│   │       ├── integration/
+│   │       ├── integration/         # (contains __init__.py for pytest discovery)
 │   │       │   └── test_integration.py  # Full ingest→query roundtrip
-│   │       ├── property/
+│   │       ├── property/            # (contains __init__.py for pytest discovery)
 │   │       │   ├── test_auth_properties.py       # JWT/key format invariants
 │   │       │   ├── test_ingest_properties.py     # Batch count, idempotency
 │   │       │   ├── test_query_properties.py      # Pagination, tenant isolation
 │   │       │   └── test_serialization_props.py   # Span payload round-trip
-│   │       └── smoke/
+│   │       └── smoke/               # (contains __init__.py for pytest discovery)
 │   │           └── test_schema.py       # Table existence, index verification
 │   │
 │   └── web/                         # ── Next.js Frontend ─────────────────
@@ -216,6 +222,9 @@ agentlens/
 │           │   └── [[...sign-in]]/page.tsx
 │           └── sign-up/
 │               └── [[...sign-up]]/page.tsx
+│
+├── docs/
+│   └── production-setup.md          # Clerk setup + multi-tenant production deployment guide
 │
 └── packages/
     └── python-sdk/                  # ── AgentLens Python SDK ─────────────
