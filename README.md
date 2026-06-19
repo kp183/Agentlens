@@ -364,7 +364,20 @@ al.flush()  # Ensure all spans are sent before exit
 
 | Protocol | Endpoint | Auth | Description |
 |----------|----------|------|-------------|
-| `WebSocket` | `/v1/ws/traces/{id}?token=...` | JWT or API Key | Live span streaming via Redis Pub/Sub |
+| `WebSocket` | `/v1/ws/traces/{id}` | JWT or API Key (sent as first message) | Live span streaming via Redis Pub/Sub |
+
+**Connecting:**
+```javascript
+const ws = new WebSocket(`ws://localhost:8000/v1/ws/traces/${traceId}`)
+ws.onopen = () => {
+  // Send auth token as the first message — never in the URL
+  ws.send(JSON.stringify({ token: yourJwtOrApiKey }))
+}
+ws.onmessage = (event) => {
+  const { type, data } = JSON.parse(event.data)
+  // type is "span" or "trace_ended"
+}
+```
 
 ### Organization & Project Management
 
@@ -372,15 +385,15 @@ al.flush()  # Ensure all spans are sent before exit
 |--------|----------|------|-------------|
 | `POST` | `/v1/orgs` | Clerk JWT | Create organization |
 | `GET` | `/v1/orgs` | Clerk JWT | List user's organizations |
-| `POST` | `/v1/orgs/{id}/projects` | Clerk JWT | Create project |
-| `GET` | `/v1/orgs/{id}/projects` | Clerk JWT | List projects |
+| `POST` | `/v1/projects` | Clerk JWT | Create project (body: `{"org_id": "...", "name": "...", "slug": "..."}`) |
+| `GET` | `/v1/projects` | Clerk JWT | List projects (query: `?org_id={org_id}`) |
 
 ### API Key Management
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `POST` | `/v1/projects/{id}/api-keys` | Clerk JWT | Generate new API key |
-| `GET` | `/v1/projects/{id}/api-keys` | Clerk JWT | List keys (prefix only) |
+| `POST` | `/v1/api-keys` | Clerk JWT | Generate new API key (body: `{"project_id": "...", "name": "..."}`) |
+| `GET` | `/v1/api-keys` | Clerk JWT | List keys (query: `?project_id={project_id}`, prefix only) |
 | `DELETE` | `/v1/api-keys/{id}` | Clerk JWT | Revoke a key |
 
 ### Health
@@ -431,7 +444,7 @@ make db-shell  # Open psql shell in Postgres container
 ## 🔒 Security Model
 
 - **API Keys**: Generated with `secrets.token_urlsafe(32)`, SHA-256 hashed before storage, prefixed with `al_live_`
-- **Authentication**: Dual-path — Clerk JWTs for dashboard users, API keys for SDK ingestion
+- **Authentication**: Dual-path — Clerk JWTs for dashboard users in production (API keys always required for SDK ingestion regardless of mode). For local development, set LOCAL_MODE=true to bypass Clerk entirely with a zero-config dev user — see Quick Start.
 - **Tenant Isolation**: Every query enforces `project_id` scoping; cross-org access returns `403`
 - **Rate Limiting**: Redis-backed sliding window, configurable per-key (default: 1000 req/min)
 - **Key Revocation**: Instant revocation with Redis cache invalidation (300s TTL)
