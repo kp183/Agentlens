@@ -10,10 +10,39 @@
 [![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat&logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Redis 7](https://img.shields.io/badge/Redis-7-DC382D?style=flat&logo=redis&logoColor=white)](https://redis.io)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white)](https://docker.com)
-[![Tests](https://img.shields.io/badge/tests-42%20passed-brightgreen?style=flat)](.)
+[![Tests](https://img.shields.io/badge/tests-43%20passed-brightgreen?style=flat)](.)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat)](LICENSE)
 
 **Capture trace hierarchies · Analyze nested tool calls · Monitor token costs in real-time**
+
+---
+
+## 👀 See It In Action
+
+**Every LLM call, tool execution, and cost — automatically captured.**
+
+<table>
+<tr>
+<td width="50%">
+
+**Hierarchical span tree with live timing**
+
+![Span execution timeline](.github/assets/span-tree.png)
+
+</td>
+<td width="50%">
+
+**Per-span token counts and cost breakdown**
+
+![LLM span inspector](.github/assets/inspector.png)
+
+</td>
+</tr>
+</table>
+
+![Trace list view](.github/assets/trace-list.png)
+
+---
 
 [Quick Start](#-quick-start) · [SDK Usage](#-sdk-usage) · [API Reference](#-api-reference) · [Architecture](#-architecture) · [Testing](#-testing--quality)
 
@@ -29,7 +58,7 @@
 - 🔌 **Zero-Config Instrumentation** — Monkey-patch OpenAI and Anthropic clients with a single function call
 - 🔐 **Multi-Tenant Security** — Clerk-based authentication, org/project scoping, and tenant-isolated API keys
 - ⚡ **Non-Blocking SDK** — Thread-safe daemon worker with background queue for zero-overhead tracing
-- 🧪 **Premium Test Suite** — 42 tests covering unit, integration, property-based (Hypothesis), and smoke testing
+- 🧪 **Premium Test Suite** — 43 tests covering unit, integration, property-based (Hypothesis), and smoke testing
 - 📊 **Cursor Pagination** — Efficient, production-grade pagination for trace listing endpoints
 
 ---
@@ -358,7 +387,7 @@ All responses follow the envelope format: `{"data": ..., "meta": {...}}`
 
 ## 🧪 Testing & Quality
 
-The test suite includes **42 backend tests** and **12 SDK tests** spanning four testing strategies:
+The test suite includes **43 backend tests** and **12 SDK tests** spanning four testing strategies:
 
 ```bash
 # Run everything
@@ -373,9 +402,9 @@ docker compose exec api pytest tests/smoke/ -v          # Schema verification
 
 | Category | Tests | What's Covered |
 |----------|-------|----------------|
-| **Unit** | 17 | API key format/hashing, ingestion validation, cursor encoding, auth checks |
-| **Integration** | 2 | Full ingest → query roundtrip, API key lifecycle |
-| **Property** | 19 | Format invariants, batch counting, tenant isolation, serialization (Hypothesis) |
+| **Unit** | 20 | API key format/hashing, ingestion validation, cursor encoding, auth checks |
+| **Integration** | 3 | Full ingest → query roundtrip, API key lifecycle |
+| **Property** | 16 | Format invariants, batch counting, tenant isolation, serialization (Hypothesis) |
 | **Smoke** | 4 | Table existence, index verification, GIN index type, partial index validation |
 
 ### Using Make shortcuts
