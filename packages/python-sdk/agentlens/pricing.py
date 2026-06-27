@@ -19,6 +19,9 @@ PRICING = {
     "claude-3-opus-20240229": {"input": 15.0 / 1_000_000, "output": 75.0 / 1_000_000},
     "claude-3-sonnet-20240229": {"input": 3.0 / 1_000_000, "output": 15.0 / 1_000_000},
     "claude-3-haiku-20240307": {"input": 0.25 / 1_000_000, "output": 1.25 / 1_000_000},
+    # Verified from cometapi.com/models on 2026-06-27 — re-check periodically,
+    # CometAPI pricing can change.
+    "glm-5.2": {"input": 1.12 / 1_000_000, "output": 3.528 / 1_000_000},
 }
 
 

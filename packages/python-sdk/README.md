@@ -16,8 +16,11 @@ The official Python client for AgentLens. Easily trace agent execution steps, ne
 Install the package via `pip` (or `uv` / `poetry`):
 
 ```bash
-pip install agentlens
+pip install agentlens-py
 ```
+
+> [!NOTE]
+> Note that the package is installed via `agentlens-py`, but the Python import name remains `import agentlens as al`.
 
 ---
 

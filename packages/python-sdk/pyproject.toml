@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agentlens"
+name = "agentlens-py"
 version = "0.1.0"
 description = "AgentLens Python SDK — zero-overhead observability for AI agents"
 requires-python = ">=3.9"

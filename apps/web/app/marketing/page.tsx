@@ -400,7 +400,7 @@ al.flush()`
                   <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-400 mt-0.5">
                     <Check className="h-3 w-3" />
                   </div>
-                  <span className="text-sm text-slate-300">Simple <code>pip install agentlens</code> install.</span>
+                  <span className="text-sm text-slate-300">Simple <code>pip install agentlens-py</code> install.</span>
                 </div>
                 <div className="flex items-start gap-3">
                   <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-400 mt-0.5">

@@ -262,8 +262,11 @@ docker compose up --build
 ```
 
 ```bash
-pip install agentlens
+pip install agentlens-py
 ```
+
+> [!NOTE]
+> Note that the package is installed via `agentlens-py`, but the Python import name remains `import agentlens as al`.
 
 ```python
 import agentlens as al
@@ -281,8 +284,11 @@ For production deployment and multi-tenant authentication using Clerk, see [docs
 ### Installation
 
 ```bash
-pip install agentlens
+pip install agentlens-py
 ```
+
+> [!NOTE]
+> Note that the package is installed via `agentlens-py`, but the Python import name remains `import agentlens as al`.
 
 ### Basic Example
 

@@ -372,7 +372,7 @@ al.instrument_openai()`;
                     <div className="space-y-2">
                       <p className="text-slate-400">Install the AgentLens Python SDK in your virtual environment:</p>
                       <pre className="p-3 rounded-lg bg-slate-900 border border-slate-800/60 font-mono text-indigo-300 select-all">
-                        pip install agentlens
+                        pip install agentlens-py
                       </pre>
                     </div>
                   )}
