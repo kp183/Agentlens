@@ -8,8 +8,39 @@ import traceback
 import uuid
 from datetime import datetime, timezone
 
+from urllib.parse import urlparse
+
 from agentlens.context import get_span_id, get_trace_id
 from agentlens.pricing import calculate_cost
+
+
+def _get_provider_from_client(completions_instance) -> str:
+    """Derive provider from the OpenAI client's base_url."""
+    client = getattr(completions_instance, "_client", None)
+    if not client:
+        return "openai"
+
+    base_url_obj = getattr(client, "base_url", None)
+    if not base_url_obj:
+        return "openai"
+
+    host = getattr(base_url_obj, "host", None)
+    if not host:
+        try:
+            host = urlparse(str(base_url_obj)).hostname
+        except Exception:
+            host = None
+
+    if not host:
+        return "openai"
+
+    host = host.lower()
+    if host == "api.openai.com":
+        return "openai"
+    elif "cometapi.com" in host:
+        return "cometapi"
+    else:
+        return host
 
 
 def instrument_openai():
@@ -38,7 +69,7 @@ def instrument_openai():
         span_id = str(uuid.uuid4())
 
         model = kwargs.get("model", "unknown")
-        provider = "openai"
+        provider = _get_provider_from_client(self)
         started_at = datetime.now(timezone.utc)
         start_time = time.time()
         messages = kwargs.get("messages", [])
@@ -210,7 +241,7 @@ def instrument_openai():
             span_id = str(uuid.uuid4())
 
             model = kwargs.get("model", "unknown")
-            provider = "openai"
+            provider = _get_provider_from_client(self)
             started_at = datetime.now(timezone.utc)
             start_time = time.time()
             messages = kwargs.get("messages", [])

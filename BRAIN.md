@@ -27,9 +27,10 @@ It is designed for developers building production-grade LLM applications and age
 - CometAPI integration built and tested — fallback routing demo, cometapi_agentlens_demo.py
 - glm-5.2 cost-tracking gap found (pricing.py only covered ~11 native OpenAI/Anthropic models) and fixed with verified CometAPI pricing
 - Version bump 0.1.0 -> 0.1.1 after a stale build was caught missing the pricing fix
+- 2026-07-03: Provider mislabeling fixed — OpenAI client wrapper now dynamically derives provider label from client base_url
 
 ## Known issues / design decisions and why
-- Provider field in trace spans: Hardcoded as `"openai"` or `"anthropic"` inside monkey-patched wrappers. This fails when custom API gateways or proxies (like CometAPI) are used with standard clients. A base_url-based detection is required to dynamically resolve the true provider.
+- Provider field in trace spans: Derived dynamically from the client's `base_url`. Defaults to `"openai"` for `api.openai.com` or unset base_url, returns `"cometapi"` for `cometapi.com` endpoints, and returns the raw hostname for custom gateways.
 - Pricing table: Static dictionary in `pricing.py` enables fast, synchronous cost calculations without network latency in the client hot path. However, it requires a background sync script (`pricing_sync.py`) to periodically retrieve new model costs from CometAPI without performing surprise network requests on import.
 - Naming: "AgentLens" collides with 8+ unrelated GitHub projects (one with 100+ stars) — noted, not addressed, positioning concern only, not code.
 
@@ -42,7 +43,7 @@ It is designed for developers building production-grade LLM applications and age
 ## Roadmap status
 | Item | Phase | Status | Commit | Notes |
 |---|---|---|---|---|
-| Provider mislabeling fix | 1 | not started | | |
+| Provider mislabeling fix | 1 | done | pending | Derived from client base_url |
 | CometAPI pricing sync | 2 | not started | | |
 | Tool span visibility | 2 | not started | | |
 | LangGraph instrumentation | 3 | not started | | |
