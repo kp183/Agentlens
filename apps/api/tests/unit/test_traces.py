@@ -241,3 +241,71 @@ def test_span_tree_root_spans_have_no_parent() -> None:
     # Children ordered by started_at
     assert tree[0].children[0].name == "child1"
     assert tree[0].children[1].name == "child2"
+
+
+def test_diff_traces_endpoint():
+    with _test_client() as client:
+        user = _make_user()
+        project = _make_project()
+
+        base_trace = _make_trace(project.id)
+        target_trace = _make_trace(project.id)
+
+        from app.middleware.auth import require_clerk_user
+        from app.database import get_db
+
+        app.dependency_overrides[require_clerk_user] = lambda: user
+
+        mock_session = AsyncMock()
+
+        mock_db_res_1 = MagicMock()
+        mock_db_res_1.scalar_one_or_none.return_value = base_trace
+
+        mock_db_res_2 = MagicMock()
+        mock_db_res_2.scalar_one_or_none.return_value = MagicMock(id=project.id, org_id=project.org_id)
+
+        mock_db_res_3 = MagicMock()
+        mock_db_res_3.scalar_one_or_none.return_value = MagicMock()
+
+        mock_session.execute.side_effect = [
+            mock_db_res_1,
+            mock_db_res_2,
+            mock_db_res_3,
+        ]
+
+        diff_data = {
+            "base_trace": {
+                "id": str(base_trace.id),
+                "project_id": str(project.id),
+                "name": "base",
+                "status": "success",
+                "started_at": base_trace.started_at.isoformat(),
+                "span_count": 1,
+                "error_count": 0,
+                "created_at": base_trace.started_at.isoformat(),
+            },
+            "target_trace": {
+                "id": str(target_trace.id),
+                "project_id": str(project.id),
+                "name": "target",
+                "status": "success",
+                "started_at": target_trace.started_at.isoformat(),
+                "span_count": 2,
+                "error_count": 0,
+                "created_at": target_trace.started_at.isoformat(),
+            },
+            "duration_diff_ms": 50,
+            "cost_diff_usd": 0.0005,
+            "total_tokens_diff": 20,
+            "span_count_diff": 1,
+            "span_diffs": [],
+        }
+
+        with patch("app.routers.traces.diff_traces", AsyncMock(return_value=MagicMock(model_dump=lambda: diff_data))):
+            app.dependency_overrides[get_db] = lambda: mock_session
+
+            resp = client.get(f"/v1/traces/diff?base_trace_id={base_trace.id}&target_trace_id={target_trace.id}")
+            assert resp.status_code == 200
+            res_json = resp.json()
+            assert "data" in res_json
+            assert res_json["data"]["duration_diff_ms"] == 50

@@ -11,7 +11,9 @@ import {
   APIKey, 
   Trace, 
   SpanNode,
-  Span
+  Span,
+  TraceDiffResult,
+  SpanDiff
 } from "@/lib/api";
 import { 
   Sparkles, 
@@ -39,7 +41,10 @@ import {
   Trash2,
   Plus,
   Loader2,
-  Wrench
+  Wrench,
+  ExternalLink,
+  Cpu,
+  GitCompare
 } from "lucide-react";
 
 export default function DashboardPage() {
@@ -79,6 +84,22 @@ export default function DashboardPage() {
 
   // Selected Span in inspector
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
+
+  // Trace Diff state
+  const [showDiffModal, setShowDiffModal] = useState(false);
+  const [diffBaseId, setDiffBaseId] = useState<string>("");
+  const [diffTargetId, setDiffTargetId] = useState<string>("");
+
+  const { data: diffData, isLoading: diffLoading } = useQuery<TraceDiffResult | null>({
+    queryKey: ["traceDiff", diffBaseId, diffTargetId],
+    queryFn: async () => {
+      const token = await getToken();
+      if (!token || !diffBaseId || !diffTargetId) return null;
+      const res = await api.diffTraces(diffBaseId, diffTargetId, token);
+      return res.data;
+    },
+    enabled: !!diffBaseId && !!diffTargetId && showDiffModal,
+  });
   
   // API Key creation
   const [newKeyName, setNewKeyName] = useState("");
@@ -1005,6 +1026,20 @@ def run_agent(prompt: str):
                     <option value="24h">Last 24 hours</option>
                     <option value="7d">Last 7 days</option>
                   </select>
+
+                  <button
+                    onClick={() => {
+                      if (tracesData && tracesData.data && tracesData.data.length >= 2) {
+                        setDiffBaseId(tracesData.data[0].id);
+                        setDiffTargetId(tracesData.data[1].id);
+                      }
+                      setShowDiffModal(true);
+                    }}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-xl text-xs font-medium transition"
+                  >
+                    <GitCompare className="h-3.5 w-3.5" />
+                    <span>Compare Traces</span>
+                  </button>
                 </div>
 
                 <div className="flex items-center space-x-2 text-xs text-slate-500">
@@ -1801,6 +1836,158 @@ al.instrument_openai()`}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* TRACE DIFF MODAL / VIEW */}
+      {showDiffModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-5xl w-full p-6 space-y-6 shadow-2xl max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex justify-between items-center pb-4 border-b border-slate-800 shrink-0">
+              <div className="flex items-center space-x-2">
+                <GitCompare className="h-5 w-5 text-indigo-400" />
+                <h3 className="text-base font-semibold text-slate-100">Trace Comparison & Diffing</h3>
+              </div>
+              <button
+                onClick={() => setShowDiffModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-200 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Trace Selectors */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 shrink-0">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">Base Trace (Reference)</label>
+                <select
+                  value={diffBaseId}
+                  onChange={(e) => setDiffBaseId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="">Select Base Trace...</option>
+                  {tracesData?.data.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name || "Trace"} ({t.status}) - {t.id.slice(0, 8)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-400">Target Trace (Comparison)</label>
+                <select
+                  value={diffTargetId}
+                  onChange={(e) => setDiffTargetId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="">Select Target Trace...</option>
+                  {tracesData?.data.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name || "Trace"} ({t.status}) - {t.id.slice(0, 8)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Content Body */}
+            {diffLoading ? (
+              <div className="py-12 text-center text-slate-400 flex items-center justify-center space-x-2">
+                <Loader2 className="h-5 w-5 animate-spin text-indigo-400" />
+                <span>Computing trace diff...</span>
+              </div>
+            ) : diffData ? (
+              <div className="space-y-6 overflow-y-auto pr-1">
+                {/* Summary Metric Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                    <p className="text-[10px] uppercase font-semibold text-slate-500">Duration Delta</p>
+                    <p className={`text-base font-semibold ${diffData.duration_diff_ms > 0 ? "text-amber-400" : "text-emerald-400"}`}>
+                      {diffData.duration_diff_ms > 0 ? `+${diffData.duration_diff_ms}ms` : `${diffData.duration_diff_ms}ms`}
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                    <p className="text-[10px] uppercase font-semibold text-slate-500">Cost Delta</p>
+                    <p className={`text-base font-semibold ${diffData.cost_diff_usd > 0 ? "text-amber-400" : "text-emerald-400"}`}>
+                      {diffData.cost_diff_usd > 0 ? `+$${diffData.cost_diff_usd.toFixed(5)}` : `$${diffData.cost_diff_usd.toFixed(5)}`}
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                    <p className="text-[10px] uppercase font-semibold text-slate-500">Tokens Delta</p>
+                    <p className={`text-base font-semibold ${diffData.total_tokens_diff > 0 ? "text-indigo-400" : "text-slate-300"}`}>
+                      {diffData.total_tokens_diff > 0 ? `+${diffData.total_tokens_diff}` : `${diffData.total_tokens_diff}`}
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                    <p className="text-[10px] uppercase font-semibold text-slate-500">Span Count Delta</p>
+                    <p className="text-base font-semibold text-slate-200">
+                      {diffData.span_count_diff > 0 ? `+${diffData.span_count_diff}` : `${diffData.span_count_diff}`}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Span Diff Table */}
+                <div className="border border-slate-800 rounded-xl overflow-hidden">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead className="bg-slate-950 text-slate-400 font-medium border-b border-slate-800 uppercase text-[10px]">
+                      <tr>
+                        <th className="py-2.5 px-3">Span Name</th>
+                        <th className="py-2.5 px-3">Type</th>
+                        <th className="py-2.5 px-3">Change Type</th>
+                        <th className="py-2.5 px-3">Base Status / Dur</th>
+                        <th className="py-2.5 px-3">Target Status / Dur</th>
+                        <th className="py-2.5 px-3">Duration Diff</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                      {diffData.span_diffs.map((d, idx) => (
+                        <tr key={idx} className="hover:bg-slate-800/30 transition">
+                          <td className="py-2.5 px-3 font-medium text-slate-200">{d.name}</td>
+                          <td className="py-2.5 px-3">
+                            <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-[10px]">
+                              {d.span_type}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span className={`px-2 py-0.5 rounded font-semibold text-[10px] uppercase ${
+                              d.change_type === "added" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
+                              d.change_type === "removed" ? "bg-red-500/10 text-red-400 border border-red-500/20" :
+                              d.change_type === "modified" ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" :
+                              "bg-slate-800 text-slate-400"
+                            }`}>
+                              {d.change_type}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 font-mono text-slate-400">
+                            {d.base_span ? `${d.base_span.status} (${d.base_span.duration_ms || 0}ms)` : "-"}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono text-slate-400">
+                            {d.target_span ? `${d.target_span.status} (${d.target_span.duration_ms || 0}ms)` : "-"}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono">
+                            {d.duration_diff_ms != null ? (
+                              <span className={d.duration_diff_ms > 0 ? "text-amber-400" : d.duration_diff_ms < 0 ? "text-emerald-400" : "text-slate-500"}>
+                                {d.duration_diff_ms > 0 ? `+${d.duration_diff_ms}ms` : `${d.duration_diff_ms}ms`}
+                              </span>
+                            ) : "-"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className="py-8 text-center text-slate-500 text-xs">
+                Select two traces to generate a side-by-side comparison.
+              </div>
+            )}
           </div>
         </div>
       )}

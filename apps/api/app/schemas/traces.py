@@ -76,6 +76,27 @@ class TraceDetail(TraceListItem):
     updated_at: datetime
 
 
+class SpanDiff(BaseModel):
+    name: str
+    span_type: str
+    change_type: Literal["added", "removed", "modified", "unchanged"]
+    base_span: SpanNode | None = None
+    target_span: SpanNode | None = None
+    status_change: list[str | None] | None = None
+    duration_diff_ms: int | None = None
+    cost_diff_usd: float | None = None
+
+
+class TraceDiffResult(BaseModel):
+    base_trace: TraceListItem
+    target_trace: TraceListItem
+    duration_diff_ms: int
+    cost_diff_usd: float
+    total_tokens_diff: int
+    span_count_diff: int
+    span_diffs: list[SpanDiff]
+
+
 # ---------------------------------------------------------------------------
 # Pagination
 # ---------------------------------------------------------------------------

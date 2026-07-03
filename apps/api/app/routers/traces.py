@@ -21,7 +21,7 @@ from app.models.org import OrgMember
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.traces import PaginatedResponse, SpanNode, TraceDetail, TraceListItem
-from app.services.traces import decode_cursor, get_span_tree, get_trace, list_traces
+from app.services.traces import decode_cursor, diff_traces, get_span_tree, get_trace, list_traces
 
 router = APIRouter(prefix="/v1", tags=["traces"])
 
@@ -47,8 +47,37 @@ async def _assert_project_access(
         )
     )
     if not member.scalar_one_or_none():
-        raise AuthorizationError("Not a member of this organization")
+        raise AuthorizationError("Access denied to this project")
+
     return project
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/traces/diff
+# ---------------------------------------------------------------------------
+
+@router.get("/traces/diff")
+async def diff_traces_endpoint(
+    base_trace_id: uuid.UUID = Query(...),
+    target_trace_id: uuid.UUID = Query(...),
+    user: User = Depends(require_clerk_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    from app.models.trace import Trace
+    from sqlalchemy import select as sa_select
+
+    b_res = await db.execute(sa_select(Trace).where(Trace.id == base_trace_id))
+    b_trace = b_res.scalar_one_or_none()
+    if not b_trace:
+        raise NotFoundError(f"Base trace {base_trace_id} not found")
+
+    await _assert_project_access(db, b_trace.project_id, user.id)
+
+    diff_result = await diff_traces(db, base_trace_id, target_trace_id, b_trace.project_id)
+    if not diff_result:
+        raise NotFoundError("One or both traces not found")
+
+    return {"data": diff_result.model_dump(), "meta": {}}
 
 
 # ---------------------------------------------------------------------------

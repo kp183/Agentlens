@@ -73,6 +73,27 @@ export interface SpanNode extends Span {
   children: SpanNode[];
 }
 
+export interface SpanDiff {
+  name: string;
+  span_type: string;
+  change_type: "added" | "removed" | "modified" | "unchanged";
+  base_span?: Span | null;
+  target_span?: Span | null;
+  status_change?: (string | null)[] | null;
+  duration_diff_ms?: number | null;
+  cost_diff_usd?: number | null;
+}
+
+export interface TraceDiffResult {
+  base_trace: Trace;
+  target_trace: Trace;
+  duration_diff_ms: number;
+  cost_diff_usd: number;
+  total_tokens_diff: number;
+  span_count_diff: number;
+  span_diffs: SpanDiff[];
+}
+
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? window.location.origin.replace(":3000", ":8000") : "http://localhost:8000");
 
 async function request(path: string, token?: string, options: RequestInit = {}) {
@@ -203,5 +224,9 @@ export const api = {
 
   async getTraceSpans(traceId: string, token: string): Promise<{ data: SpanNode[]; meta: { total: number } }> {
     return request(`/v1/traces/${traceId}/spans`, token);
+  },
+
+  async diffTraces(baseTraceId: string, targetTraceId: string, token: string): Promise<{ data: TraceDiffResult; meta: any }> {
+    return request(`/v1/traces/diff?base_trace_id=${baseTraceId}&target_trace_id=${targetTraceId}`, token);
   },
 };

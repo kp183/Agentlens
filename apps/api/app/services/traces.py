@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.span import Span
 from app.models.trace import Trace
-from app.schemas.traces import SpanNode
+from app.schemas.traces import SpanDiff, SpanNode, TraceDiffResult, TraceListItem
 
 
 # ---------------------------------------------------------------------------
@@ -187,3 +187,143 @@ async def get_span_tree(
         _sort_children(root)
 
     return roots
+
+
+# ---------------------------------------------------------------------------
+# Trace diffing
+# ---------------------------------------------------------------------------
+
+async def diff_traces(
+    session: AsyncSession,
+    base_trace_id: uuid.UUID,
+    target_trace_id: uuid.UUID,
+    project_id: uuid.UUID,
+) -> TraceDiffResult | None:
+    """Compare two traces side-by-side and calculate delta metrics and span-level diffs."""
+    base_trace = await get_trace(session, base_trace_id, project_id)
+    target_trace = await get_trace(session, target_trace_id, project_id)
+
+    if not base_trace or not target_trace:
+        return None
+
+    # Fetch flat spans for both traces
+    base_result = await session.execute(
+        select(Span).where(Span.trace_id == base_trace_id).order_by(Span.started_at.asc())
+    )
+    base_spans = list(base_result.scalars().all())
+
+    target_result = await session.execute(
+        select(Span).where(Span.trace_id == target_trace_id).order_by(Span.started_at.asc())
+    )
+    target_spans = list(target_result.scalars().all())
+
+    def _to_span_node(s: Span) -> SpanNode:
+        return SpanNode(
+            id=s.id,
+            trace_id=s.trace_id,
+            parent_span_id=s.parent_span_id,
+            name=s.name,
+            span_type=s.span_type,
+            status=s.status,
+            started_at=s.started_at,
+            ended_at=s.ended_at,
+            duration_ms=s.duration_ms,
+            model=s.model,
+            provider=s.provider,
+            input_tokens=s.input_tokens,
+            output_tokens=s.output_tokens,
+            cost_usd=float(s.cost_usd) if s.cost_usd is not None else None,
+            tool_name=s.tool_name,
+            tool_call_id=s.tool_call_id,
+            input=s.input,
+            output=s.output,
+            metadata=s.metadata_,
+            tags=s.tags,
+            error_type=s.error_type,
+            error_message=s.error_message,
+            error_stack=s.error_stack,
+        )
+
+    base_nodes = [_to_span_node(s) for s in base_spans]
+    target_nodes = [_to_span_node(s) for s in target_spans]
+
+    base_by_key: dict[tuple[str, str], list[SpanNode]] = {}
+    for n in base_nodes:
+        base_by_key.setdefault((n.name, n.span_type), []).append(n)
+
+    target_by_key: dict[tuple[str, str], list[SpanNode]] = {}
+    for n in target_nodes:
+        target_by_key.setdefault((n.name, n.span_type), []).append(n)
+
+    all_keys = list(dict.fromkeys(list(base_by_key.keys()) + list(target_by_key.keys())))
+    span_diffs: list[SpanDiff] = []
+
+    for key in all_keys:
+        b_list = base_by_key.get(key, [])
+        t_list = target_by_key.get(key, [])
+
+        max_len = max(len(b_list), len(t_list))
+        for i in range(max_len):
+            b_span = b_list[i] if i < len(b_list) else None
+            t_span = t_list[i] if i < len(t_list) else None
+
+            if b_span and not t_span:
+                span_diffs.append(
+                    SpanDiff(
+                        name=key[0],
+                        span_type=key[1],
+                        change_type="removed",
+                        base_span=b_span,
+                        target_span=None,
+                        status_change=[b_span.status, None],
+                        duration_diff_ms=-(b_span.duration_ms or 0),
+                        cost_diff_usd=-(b_span.cost_usd or 0.0),
+                    )
+                )
+            elif t_span and not b_span:
+                span_diffs.append(
+                    SpanDiff(
+                        name=key[0],
+                        span_type=key[1],
+                        change_type="added",
+                        base_span=None,
+                        target_span=t_span,
+                        status_change=[None, t_span.status],
+                        duration_diff_ms=t_span.duration_ms or 0,
+                        cost_diff_usd=t_span.cost_usd or 0.0,
+                    )
+                )
+            elif b_span and t_span:
+                dur_diff = (t_span.duration_ms or 0) - (b_span.duration_ms or 0)
+                cost_diff = (t_span.cost_usd or 0.0) - (b_span.cost_usd or 0.0)
+                status_chg = [b_span.status, t_span.status] if b_span.status != t_span.status else None
+
+                is_modified = status_chg is not None or dur_diff != 0 or round(cost_diff, 6) != 0.0 or b_span.input != t_span.input or b_span.output != t_span.output
+
+                span_diffs.append(
+                    SpanDiff(
+                        name=key[0],
+                        span_type=key[1],
+                        change_type="modified" if is_modified else "unchanged",
+                        base_span=b_span,
+                        target_span=t_span,
+                        status_change=status_chg,
+                        duration_diff_ms=dur_diff,
+                        cost_diff_usd=cost_diff,
+                    )
+                )
+
+    duration_diff_ms = (target_trace.duration_ms or 0) - (base_trace.duration_ms or 0)
+    cost_diff_usd = (target_trace.total_cost_usd or 0.0) - (base_trace.total_cost_usd or 0.0)
+    total_tokens_diff = (target_trace.total_tokens or 0) - (base_trace.total_tokens or 0)
+    span_count_diff = target_trace.span_count - base_trace.span_count
+
+    return TraceDiffResult(
+        base_trace=TraceListItem.model_validate(base_trace),
+        target_trace=TraceListItem.model_validate(target_trace),
+        duration_diff_ms=duration_diff_ms,
+        cost_diff_usd=cost_diff_usd,
+        total_tokens_diff=total_tokens_diff,
+        span_count_diff=span_count_diff,
+        span_diffs=span_diffs,
+    )
