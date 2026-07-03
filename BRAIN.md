@@ -52,4 +52,4 @@ It is designed for developers building production-grade LLM applications and age
 | CometAPI pricing sync | 2 | done | b91b83f | Fetches /api/models, skips null pricing |
 | Tool span visibility | 2 | done | b91b83f | Dedicated Tool Details view in dashboard |
 | LangGraph instrumentation | 3 | done | 6f27c0f | Callback handler and CompiledStateGraph monkey-patch |
-| Trace diffing | 3 | done | pending | /v1/traces/diff endpoint & side-by-side modal |
+| Trace diffing | 3 | done | 227a028 | /v1/traces/diff endpoint & side-by-side modal |
