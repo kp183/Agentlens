@@ -43,7 +43,7 @@ It is designed for developers building production-grade LLM applications and age
 ## Roadmap status
 | Item | Phase | Status | Commit | Notes |
 |---|---|---|---|---|
-| Provider mislabeling fix | 1 | done | pending | Derived from client base_url |
+| Provider mislabeling fix | 1 | done | 2c8bf8c | Derived from client base_url |
 | CometAPI pricing sync | 2 | not started | | |
 | Tool span visibility | 2 | not started | | |
 | LangGraph instrumentation | 3 | not started | | |
