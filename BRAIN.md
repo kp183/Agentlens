@@ -46,7 +46,7 @@ It is designed for developers building production-grade LLM applications and age
 | Item | Phase | Status | Commit | Notes |
 |---|---|---|---|---|
 | Provider mislabeling fix | 1 | done | 2c8bf8c | Derived from client base_url |
-| CometAPI pricing sync | 2 | done | pending | Fetches /api/models, skips null pricing |
-| Tool span visibility | 2 | done | pending | Dedicated Tool Details view in dashboard |
+| CometAPI pricing sync | 2 | done | b91b83f | Fetches /api/models, skips null pricing |
+| Tool span visibility | 2 | done | b91b83f | Dedicated Tool Details view in dashboard |
 | LangGraph instrumentation | 3 | not started | | |
 | Trace diffing | 3 | not started | | |
