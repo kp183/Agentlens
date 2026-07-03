@@ -30,6 +30,7 @@ It is designed for developers building production-grade LLM applications and age
 - 2026-07-03: Provider mislabeling fixed — OpenAI client wrapper now dynamically derives provider label from client base_url
 - 2026-07-03: CometAPI pricing sync (`pricing_sync.py`) built, tested, and verified against `/api/models`
 - 2026-07-03: Dedicated Tool Execution View added to web dashboard inspector for tool spans
+- 2026-07-03: LangGraph auto-instrumentation (`langgraph.py`) built and tested with callback handler and graph execution hooks
 
 ## Known issues / design decisions and why
 - Provider field in trace spans: Derived dynamically from the client's `base_url`. Defaults to `"openai"` for `api.openai.com` or unset base_url, returns `"cometapi"` for `cometapi.com` endpoints, and returns the raw hostname for custom gateways.
@@ -48,5 +49,5 @@ It is designed for developers building production-grade LLM applications and age
 | Provider mislabeling fix | 1 | done | 2c8bf8c | Derived from client base_url |
 | CometAPI pricing sync | 2 | done | b91b83f | Fetches /api/models, skips null pricing |
 | Tool span visibility | 2 | done | b91b83f | Dedicated Tool Details view in dashboard |
-| LangGraph instrumentation | 3 | not started | | |
+| LangGraph instrumentation | 3 | done | pending | Callback handler and CompiledStateGraph monkey-patch |
 | Trace diffing | 3 | not started | | |

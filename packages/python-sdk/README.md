@@ -99,6 +99,21 @@ response = client.messages.create(
 )
 ```
 
+#### LangGraph Auto-Instrumentation
+
+```python
+import agentlens as al
+from langgraph.graph import StateGraph
+
+al.init(api_key="al_live_...")
+al.instrument_langgraph()
+
+# All LangGraph CompiledStateGraph invocations automatically record
+# node transitions, routing decisions, and tool executions as nested spans
+graph = builder.compile()
+graph.invoke({"messages": [("user", "Calculate 2 + 2")]})
+```
+
 ---
 
 ## Public API Reference

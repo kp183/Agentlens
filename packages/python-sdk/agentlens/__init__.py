@@ -10,12 +10,15 @@ from typing import Optional
 from agentlens.client import AgentLensClient
 from agentlens.decorators import span, trace
 from agentlens.instruments.anthropic import instrument_anthropic
+from agentlens.instruments.langgraph import AgentLensLangGraphCallbackHandler, instrument_langgraph
 from agentlens.instruments.openai import instrument_openai
 
 __all__ = [
     "init",
     "instrument_openai",
     "instrument_anthropic",
+    "instrument_langgraph",
+    "AgentLensLangGraphCallbackHandler",
     "trace",
     "span",
     "flush",

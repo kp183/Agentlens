@@ -55,7 +55,7 @@
 - 🔄 **Real-Time Streaming** — WebSocket-powered live span updates via Redis Pub/Sub
 - 🌳 **Hierarchical Trace Trees** — Nested parent-child span relationships with Gantt chart visualization
 - 💰 **Automatic Cost Tracking** — Built-in pricing engine for OpenAI & Anthropic models (GPT-4o, Claude 3.5, etc.)
-- 🔌 **Zero-Config Instrumentation** — Monkey-patch OpenAI and Anthropic clients with a single function call
+- 🔌 **Zero-Config Instrumentation** — Monkey-patch OpenAI, Anthropic, and LangGraph with a single function call
 - 🔐 **Multi-Tenant Security** — Clerk-based authentication, org/project scoping, and tenant-isolated API keys
 - ⚡ **Non-Blocking SDK** — Thread-safe daemon worker with background queue for zero-overhead tracing
 - 🧪 **Premium Test Suite** — 43 tests covering unit, integration, property-based (Hypothesis), and smoke testing
