@@ -37,6 +37,7 @@ It is designed for developers building production-grade LLM applications and age
 - Provider field in trace spans: Derived dynamically from the client's `base_url`. Defaults to `"openai"` for `api.openai.com` or unset base_url, returns `"cometapi"` for `cometapi.com` endpoints, and returns the raw hostname for custom gateways.
 - Pricing table: Static dictionary in `pricing.py` enables fast, synchronous cost calculations without network latency in the client hot path. The `pricing_sync.py` script periodically fetches `/api/models` from CometAPI, converts per-million token pricing, and merges rates without overwriting entries with null pricing.
 - LangGraph callback handler: `on_chain_start`/`on_chain_end` node transitions and state capture verified against real `langgraph==1.2.7` StateGraph. `on_tool_start`/`on_tool_end` and `on_chain_error` callback paths are implemented in `langgraph.py` and covered by unit tests, but unexercised by real tool node execution in live integration tests.
+- Trace diff span matching: Spans are matched by key tuple `(name, span_type)`. Renamed spans between trace versions (including renamed root spans such as `Agent v1` vs `Agent v2`) will show as separate `removed` and `added` spans rather than a single `modified` span with duration delta.
 - Naming: "AgentLens" collides with 8+ unrelated GitHub projects (one with 100+ stars) — noted, not addressed, positioning concern only, not code.
 
 ## Community feedback log
