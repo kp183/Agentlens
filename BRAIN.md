@@ -49,5 +49,5 @@ It is designed for developers building production-grade LLM applications and age
 | Provider mislabeling fix | 1 | done | 2c8bf8c | Derived from client base_url |
 | CometAPI pricing sync | 2 | done | b91b83f | Fetches /api/models, skips null pricing |
 | Tool span visibility | 2 | done | b91b83f | Dedicated Tool Details view in dashboard |
-| LangGraph instrumentation | 3 | done | pending | Callback handler and CompiledStateGraph monkey-patch |
+| LangGraph instrumentation | 3 | done | 6f27c0f | Callback handler and CompiledStateGraph monkey-patch |
 | Trace diffing | 3 | not started | | |
