@@ -28,10 +28,12 @@ It is designed for developers building production-grade LLM applications and age
 - glm-5.2 cost-tracking gap found (pricing.py only covered ~11 native OpenAI/Anthropic models) and fixed with verified CometAPI pricing
 - Version bump 0.1.0 -> 0.1.1 after a stale build was caught missing the pricing fix
 - 2026-07-03: Provider mislabeling fixed — OpenAI client wrapper now dynamically derives provider label from client base_url
+- 2026-07-03: CometAPI pricing sync (`pricing_sync.py`) built, tested, and verified against `/api/models`
+- 2026-07-03: Dedicated Tool Execution View added to web dashboard inspector for tool spans
 
 ## Known issues / design decisions and why
 - Provider field in trace spans: Derived dynamically from the client's `base_url`. Defaults to `"openai"` for `api.openai.com` or unset base_url, returns `"cometapi"` for `cometapi.com` endpoints, and returns the raw hostname for custom gateways.
-- Pricing table: Static dictionary in `pricing.py` enables fast, synchronous cost calculations without network latency in the client hot path. However, it requires a background sync script (`pricing_sync.py`) to periodically retrieve new model costs from CometAPI without performing surprise network requests on import.
+- Pricing table: Static dictionary in `pricing.py` enables fast, synchronous cost calculations without network latency in the client hot path. The `pricing_sync.py` script periodically fetches `/api/models` from CometAPI, converts per-million token pricing, and merges rates without overwriting entries with null pricing.
 - Naming: "AgentLens" collides with 8+ unrelated GitHub projects (one with 100+ stars) — noted, not addressed, positioning concern only, not code.
 
 ## Community feedback log
@@ -44,7 +46,7 @@ It is designed for developers building production-grade LLM applications and age
 | Item | Phase | Status | Commit | Notes |
 |---|---|---|---|---|
 | Provider mislabeling fix | 1 | done | 2c8bf8c | Derived from client base_url |
-| CometAPI pricing sync | 2 | not started | | |
-| Tool span visibility | 2 | not started | | |
+| CometAPI pricing sync | 2 | done | pending | Fetches /api/models, skips null pricing |
+| Tool span visibility | 2 | done | pending | Dedicated Tool Details view in dashboard |
 | LangGraph instrumentation | 3 | not started | | |
 | Trace diffing | 3 | not started | | |

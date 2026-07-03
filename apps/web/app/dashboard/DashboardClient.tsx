@@ -38,7 +38,8 @@ import {
   ArrowRightLeft,
   Trash2,
   Plus,
-  Loader2
+  Loader2,
+  Wrench
 } from "lucide-react";
 
 export default function DashboardPage() {
@@ -463,7 +464,13 @@ export default function DashboardPage() {
   const selectedSpanObj = flatSpanNodes.find(node => node.span.id === selectedSpanId)?.span || flatSpanNodes[0]?.span;
 
   // Selected Span tab
-  const [inspectorTab, setInspectorTab] = useState<"input" | "output" | "llm" | "error" | "metadata">("input");
+  const [inspectorTab, setInspectorTab] = useState<"input" | "output" | "llm" | "tool" | "error" | "metadata">("input");
+
+  useEffect(() => {
+    if (selectedSpanObj?.span_type === "tool") {
+      setInspectorTab("tool");
+    }
+  }, [selectedSpanObj?.id]);
 
   // Sync selected span id
   useEffect(() => {
@@ -1339,6 +1346,20 @@ al.instrument_openai()`}
                           </button>
                         )}
 
+                        {/* Tab Tool Execution for Tool spans */}
+                        {selectedSpanObj.span_type === "tool" && (
+                          <button
+                            onClick={() => setInspectorTab("tool")}
+                            className={`flex-1 py-3 px-4 text-center border-b-2 font-medium transition ${
+                              inspectorTab === "tool" 
+                                ? "border-amber-500 text-amber-400 bg-amber-500/5" 
+                                : "border-transparent text-slate-400 hover:text-slate-200"
+                            }`}
+                          >
+                            Tool Details
+                          </button>
+                        )}
+
                         {/* Tab Error if error state */}
                         {selectedSpanObj.status === "error" && (
                           <button
@@ -1409,6 +1430,35 @@ al.instrument_openai()`}
                                 <div className="text-[10px] font-semibold text-slate-500 uppercase">Output Tokens</div>
                                 <div className="font-semibold text-slate-200 font-mono">{selectedSpanObj.output_tokens || 0}</div>
                               </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Tab: Tool Details */}
+                        {inspectorTab === "tool" && (
+                          <div className="space-y-4">
+                            <div className="flex items-center space-x-2 text-[10px] font-semibold text-amber-400 uppercase tracking-wider">
+                              <Wrench className="h-3.5 w-3.5" />
+                              <span>Tool Execution View</span>
+                            </div>
+                            
+                            <div className="p-4 rounded-xl bg-slate-950 border border-slate-900 space-y-1">
+                              <div className="text-[10px] font-semibold text-slate-500 uppercase">Tool Name</div>
+                              <div className="font-semibold text-amber-300 font-mono text-sm">{selectedSpanObj.name}</div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Tool Arguments (Input)</div>
+                              <pre className="p-4 rounded-xl bg-slate-950 border border-slate-900 overflow-x-auto whitespace-pre-wrap select-all text-amber-200/90">
+                                {JSON.stringify(selectedSpanObj.input || {}, null, 2)}
+                              </pre>
+                            </div>
+
+                            <div className="space-y-2">
+                              <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Tool Result (Output)</div>
+                              <pre className="p-4 rounded-xl bg-slate-950 border border-slate-900 overflow-x-auto whitespace-pre-wrap select-all text-emerald-300/90">
+                                {JSON.stringify(selectedSpanObj.output || {}, null, 2)}
+                              </pre>
                             </div>
                           </div>
                         )}
