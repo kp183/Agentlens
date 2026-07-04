@@ -54,8 +54,10 @@
 
 - 🔄 **Real-Time Streaming** — WebSocket-powered live span updates via Redis Pub/Sub
 - 🌳 **Hierarchical Trace Trees** — Nested parent-child span relationships with Gantt chart visualization
-- 💰 **Automatic Cost Tracking** — Built-in pricing engine for OpenAI & Anthropic models (GPT-4o, Claude 3.5, etc.)
-- 🔌 **Zero-Config Instrumentation** — Monkey-patch OpenAI, Anthropic, and LangGraph with a single function call
+- 💰 **Automatic Cost Tracking** — Built-in pricing engine for OpenAI & Anthropic models with automatic CometAPI catalog pricing sync
+- 🔌 **Zero-Config Instrumentation** — Monkey-patch OpenAI, Anthropic, CometAPI gateways, and LangGraph with a single function call
+- 🔀 **Trace Diffing** — Side-by-side execution comparison and diff visualization for prompt/model iterations
+- 🛠️ **Tool Span Inspector** — Dedicated tool execution details view for input/output payloads and error diagnosis
 - 🔐 **Multi-Tenant Security** — Clerk-based authentication, org/project scoping, and tenant-isolated API keys
 - ⚡ **Non-Blocking SDK** — Thread-safe daemon worker with background queue for zero-overhead tracing
 - 🧪 **Premium Test Suite** — 43 tests covering unit, integration, property-based (Hypothesis), and smoke testing
@@ -275,7 +277,9 @@ al.instrument_openai()
 # Your traces appear at http://localhost:3000
 ```
 
-For production deployment and multi-tenant authentication using Clerk, see [docs/production-setup.md](file:///c:/Users/kp294/jayganesh/agentlens/docs/production-setup.md).
+For production deployment and multi-tenant authentication using Clerk, see [docs/production-setup.md](docs/production-setup.md).
+
+See [CometAPI integration write-up](docs/cometapi-integration/cometapi-integration-writeup.md) for a real end-to-end example with multi-provider fallback and cost tracking.
 
 ---
 
