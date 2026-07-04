@@ -10,7 +10,7 @@
 [![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat&logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Redis 7](https://img.shields.io/badge/Redis-7-DC382D?style=flat&logo=redis&logoColor=white)](https://redis.io)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white)](https://docker.com)
-[![Tests](https://img.shields.io/badge/tests-43%20passed-brightgreen?style=flat)](.)
+[![Tests](https://img.shields.io/badge/tests-63%20passed-brightgreen?style=flat)](.)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat)](LICENSE)
 
 **Capture trace hierarchies · Analyze nested tool calls · Monitor token costs in real-time**
@@ -60,7 +60,7 @@
 - 🛠️ **Tool Span Inspector** — Dedicated tool execution details view for input/output payloads and error diagnosis
 - 🔐 **Multi-Tenant Security** — Clerk-based authentication, org/project scoping, and tenant-isolated API keys
 - ⚡ **Non-Blocking SDK** — Thread-safe daemon worker with background queue for zero-overhead tracing
-- 🧪 **Premium Test Suite** — 43 tests covering unit, integration, property-based (Hypothesis), and smoke testing
+- 🧪 **Premium Test Suite** — 63 tests covering unit, integration, property-based (Hypothesis), and smoke testing
 - 📊 **Cursor Pagination** — Efficient, production-grade pagination for trace listing endpoints
 
 ---
@@ -419,7 +419,7 @@ All responses follow the envelope format: `{"data": ..., "meta": {...}}`
 
 ## 🧪 Testing & Quality
 
-The test suite includes **43 backend tests** and **12 SDK tests** spanning four testing strategies:
+The test suite includes **44 backend tests** and **19 SDK tests** (63 total) spanning four testing strategies:
 
 ```bash
 # Run everything
@@ -434,7 +434,7 @@ docker compose exec api pytest tests/smoke/ -v          # Schema verification
 
 | Category | Tests | What's Covered |
 |----------|-------|----------------|
-| **Unit** | 20 | API key format/hashing, ingestion validation, cursor encoding, auth checks |
+| **Unit** | 21 | API key format/hashing, ingestion validation, cursor encoding, auth checks |
 | **Integration** | 3 | Full ingest → query roundtrip, API key lifecycle |
 | **Property** | 16 | Format invariants, batch counting, tenant isolation, serialization (Hypothesis) |
 | **Smoke** | 4 | Table existence, index verification, GIN index type, partial index validation |

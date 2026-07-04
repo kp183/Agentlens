@@ -80,10 +80,10 @@ pip install agentlens-py
 pip install openai
 export AGENTLENS_API_KEY="al_live_..."
 export COMETAPI_KEY="sk-..."
-python cometapi_agentlens_demo.py
+python examples/cometapi_agentlens_demo.py
 
 # optional: keep pricing current against CometAPI's full catalog
 python -m agentlens.pricing_sync
 ```
 
-Full script: `cometapi_agentlens_demo.py` in the AgentLens repo.
+Full script: `examples/cometapi_agentlens_demo.py` in the AgentLens repo.

@@ -160,11 +160,9 @@ test_trace.py
 # Kiro AI IDE specs (internal)
 .kiro/
 
-# Editor
-.vscode/
-
-# Hypothesis test data
-apps/api/.hypothesis/
-apps/api/tmp/
-apps/api/unicode_data/
+# Internal project memory and scratch artifacts
+BRAIN.md
+results/
+cometapi-writeup-final/
+*.egg-info
 
