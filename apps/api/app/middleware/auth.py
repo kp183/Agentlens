@@ -199,13 +199,21 @@ async def require_clerk_user(
 
     token = credentials.credentials
 
+    expected_issuer = settings.resolved_clerk_issuer or None
+    decode_options = {
+        "verify_aud": False,
+        "verify_exp": True,
+        "verify_iss": bool(expected_issuer),
+    }
+
     try:
         jwks = await _get_jwks()
         payload = jwt.decode(
             token,
             jwks,
             algorithms=["RS256"],
-            options={"verify_aud": False, "verify_exp": True},
+            issuer=expected_issuer,
+            options=decode_options,
         )
     except JWTError as exc:
         # On key rotation, clear cache and retry once
@@ -218,7 +226,8 @@ async def require_clerk_user(
                 token,
                 jwks,
                 algorithms=["RS256"],
-                options={"verify_aud": False, "verify_exp": True},
+                issuer=expected_issuer,
+                options=decode_options,
             )
         except JWTError as inner_exc:
             logger.warning("JWT verification failed: %s", inner_exc)

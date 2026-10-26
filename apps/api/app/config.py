@@ -46,6 +46,22 @@ class Settings(BaseSettings):
     clerk_publishable_key: str = ""
     # e.g. https://<instance>.clerk.accounts.dev/.well-known/jwks.json
     clerk_jwks_url: str = ""
+    # Expected Clerk JWT issuer, e.g. https://<instance>.clerk.accounts.dev
+    clerk_issuer: str = ""
+
+    @property
+    def resolved_clerk_issuer(self) -> str:
+        """Derive or return the expected Clerk JWT issuer."""
+        if self.clerk_issuer:
+            return self.clerk_issuer.rstrip("/")
+        if self.clerk_jwks_url:
+            url = self.clerk_jwks_url.rstrip("/")
+            if url.endswith("/.well-known/jwks.json"):
+                return url[:-len("/.well-known/jwks.json")]
+            elif url.endswith("/jwks.json"):
+                return url[:-len("/jwks.json")]
+            return url
+        return ""
 
     # ------------------------------------------------------------------ #
     # Application                                                          #
