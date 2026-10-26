@@ -158,3 +158,65 @@ def test_partial_validation_failure_schema_rejects_invalid_type() -> None:
     assert resp.status_code == 422, (
         f"Expected 422, got {resp.status_code}: {resp.text}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Maximum request body size enforcement (413 Payload Too Large)
+# ---------------------------------------------------------------------------
+
+def test_ingest_oversized_content_length_returns_413() -> None:
+    """A request whose Content-Length exceeds max_request_size_bytes returns 413."""
+    from app.config import get_settings
+    settings = get_settings()
+
+    with patch.object(settings, "max_request_size_bytes", 1024):  # 1 KB limit
+        with _test_client() as client:
+            resp = client.post(
+                "/v1/ingest",
+                headers={
+                    "Authorization": "Bearer al_live_test",
+                    "Content-Length": "2048",
+                },
+                content=b"x" * 2048,
+            )
+    assert resp.status_code == 413
+    data = resp.json()
+    assert data["error"]["code"] == "PAYLOAD_TOO_LARGE"
+    assert "1024" in data["error"]["message"]
+
+
+def test_ingest_oversized_body_stream_returns_413() -> None:
+    """A request whose buffered body exceeds max_request_size_bytes returns 413."""
+    from app.config import get_settings
+    settings = get_settings()
+
+    with patch.object(settings, "max_request_size_bytes", 500):  # 500 bytes limit
+        with _test_client() as client:
+            resp = client.post(
+                "/v1/ingest",
+                headers={"Authorization": "Bearer al_live_test"},
+                json={"spans": [_valid_span(input={"huge": "x" * 1000})]},
+            )
+    assert resp.status_code == 413
+    data = resp.json()
+    assert data["error"]["code"] == "PAYLOAD_TOO_LARGE"
+    assert "500" in data["error"]["message"]
+
+
+def test_ingest_payload_within_limit_passes_size_check() -> None:
+    """A request within size limit passes the size middleware (auth/schema tested)."""
+    from app.config import get_settings
+    from app.middleware.auth import require_api_key
+
+    settings = get_settings()
+    app.dependency_overrides[require_api_key] = lambda: _make_project()
+
+    with patch.object(settings, "max_request_size_bytes", 10 * 1024 * 1024):  # 10 MB
+        with _test_client() as client:
+            resp = client.post(
+                "/v1/ingest",
+                headers={"Authorization": "Bearer al_live_test"},
+                json={"spans": [_valid_span()]},
+            )
+    # Status should not be 413
+    assert resp.status_code != 413

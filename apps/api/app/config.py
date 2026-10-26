@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     environment: str = "development"
     api_version: str = "v1"
     local_mode: bool = False  # set LOCAL_MODE=true in .env to skip auth
+    # Maximum request body size in bytes (default: 5MB)
+    max_request_size_bytes: int = 5 * 1024 * 1024
 
     # Explicit CORS origin allowlist.  Never use wildcard "*".
     # Supply as a comma-separated string in the environment:
