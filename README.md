@@ -54,7 +54,7 @@
 
 - 🔄 **Real-Time Streaming** — WebSocket-powered live span updates via Redis Pub/Sub
 - 🌳 **Hierarchical Trace Trees** — Nested parent-child span relationships with Gantt chart visualization
-- 💰 **Automatic Cost Tracking** — Built-in pricing engine for OpenAI & Anthropic models with automatic CometAPI catalog pricing sync
+- 💰 **Automatic Cost Tracking** — Built-in pricing engine for OpenAI & Anthropic models with CometAPI catalog pricing sync utility (`python -m agentlens.pricing_sync`)
 - 🔌 **Zero-Config Instrumentation** — Monkey-patch OpenAI, Anthropic, CometAPI gateways, and LangGraph with a single function call
 - 🔀 **Trace Diffing** — Side-by-side execution comparison and diff visualization for prompt/model iterations
 - 🛠️ **Tool Span Inspector** — Dedicated tool execution details view for input/output payloads and error diagnosis
@@ -187,7 +187,7 @@ agentlens/
 │   │   │   └── versions/
 │   │   │       └── 001_initial_schema.py
 │   │   │
-│   │   └── tests/                   # Backend test suite (43 tests)
+│   │   └── tests/                   # Backend test suite (44 tests)
 │   │       ├── conftest.py          # Shared pytest fixtures (mock DB, mock Redis, test client)
 │   │       │
 │   │       ├── unit/                # (contains __init__.py for pytest discovery)
@@ -243,9 +243,11 @@ agentlens/
         │       ├── openai.py        #   Monkey-patch for openai.ChatCompletions
         │       └── anthropic.py     #   Monkey-patch for anthropic.Messages
         │
-        └── tests/                   # SDK test suite (12 tests)
+        └── tests/                   # SDK test suite
             ├── unit/
-            │   └── test_queue.py        # Queue worker, flush, thread safety
+            │   ├── test_queue.py        # Queue worker, flush, thread safety
+            │   ├── test_redaction.py    # Configurable prompt/completion capture & redaction
+            │   └── test_openai_provider.py
             └── property/
                 ├── test_pricing_properties.py   # Cost calculation invariants
                 └── test_sdk_properties.py       # Payload structure invariants
@@ -264,17 +266,34 @@ docker compose up --build
 ```
 
 ```bash
-pip install agentlens-py
+pip install agentlens-py openai
 ```
 
 > [!NOTE]
-> Note that the package is installed via `agentlens-py`, but the Python import name remains `import agentlens as al`.
+> Note that the package is installed via `agentlens-py`, but the Python import name remains `import agentlens as al`. Install your model provider package (such as `openai`, `anthropic`, or `langgraph`) alongside `agentlens-py`.
 
 ```python
 import agentlens as al
+import openai
+
+# 1. Initialize SDK & instrument provider
 al.init(api_key="local-dev-key", base_url="http://localhost:8000")
 al.instrument_openai()
-# Your traces appear at http://localhost:3000
+
+client = openai.OpenAI()
+
+# 2. Execute an LLM call inside a traced context
+@al.trace(name="Quickstart Run")
+def main():
+    return client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "Hello AgentLens!"}],
+    )
+
+response = main()
+al.flush()
+
+# Your trace appears live at http://localhost:3000
 ```
 
 For production deployment and multi-tenant authentication using Clerk, see [docs/production-setup.md](docs/production-setup.md).
