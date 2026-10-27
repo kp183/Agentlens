@@ -34,3 +34,12 @@ Ensure that your database URL and CORS origins are configured for your productio
 DATABASE_URL=postgresql+asyncpg://user:password@prod-db-host/agentlens
 CORS_ORIGINS=["https://app.yourdomain.com"]
 ```
+
+## 4. Reverse Proxy & Request Size Limits
+
+AgentLens enforces a maximum request body size (default: 5MB via `MAX_REQUEST_SIZE_BYTES`) at the API application layer with incremental stream checking. For defense-in-depth against slowloris attacks and excessive resource allocation on chunked transfers, configure your upstream reverse proxy (e.g. Nginx, Cloudflare, Traefik) to enforce client body limits at the network edge:
+
+```nginx
+# Example Nginx reverse proxy configuration
+client_max_body_size 5M;
+```

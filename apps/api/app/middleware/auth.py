@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from datetime import datetime, timezone
@@ -11,6 +12,7 @@ import httpx
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
+from jose.exceptions import ExpiredSignatureError, JWTClaimsError
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,25 +35,70 @@ settings = get_settings()
 _bearer = HTTPBearer(auto_error=False)
 
 # ---------------------------------------------------------------------------
-# JWKS cache (in-memory, 1-hour TTL)
+# JWKS cache (in-memory, 1-hour TTL with concurrency-safe refresh throttling)
 # ---------------------------------------------------------------------------
 
-_jwks_cache: dict[str, Any] = {}
+_jwks_cache: Any = {}
 _jwks_fetched_at: float = 0.0
-_JWKS_TTL = 3600  # seconds
+_jwks_last_refreshed_at: float = 0.0
+_JWKS_TTL = 3600  # seconds (cache lifetime)
+_JWKS_MIN_REFRESH_INTERVAL = 10.0  # minimum seconds between forced key-rotation refreshes
+_jwks_lock: asyncio.Lock | None = None
 
 
-async def _get_jwks() -> dict:
-    global _jwks_cache, _jwks_fetched_at
+def _get_jwks_lock() -> asyncio.Lock:
+    global _jwks_lock
+    if _jwks_lock is None:
+        _jwks_lock = asyncio.Lock()
+    return _jwks_lock
+
+
+def _get_cached_kids(jwks: Any) -> set[str]:
+    """Extract key IDs present in a JWKS or JWK structure."""
+    if isinstance(jwks, dict):
+        keys = jwks.get("keys")
+        if isinstance(keys, list):
+            return {k["kid"] for k in keys if isinstance(k, dict) and "kid" in k}
+        if "kid" in jwks:
+            return {jwks["kid"]}
+    return set()
+
+
+def _get_token_kid(token: str) -> str | None:
+    """Extract the kid header parameter from an unverified JWT."""
+    try:
+        header = jwt.get_unverified_header(token)
+        if isinstance(header, dict):
+            kid = header.get("kid")
+            return str(kid) if kid is not None else None
+    except Exception:
+        pass
+    return None
+
+
+async def _get_jwks(force: bool = False) -> Any:
+    """Fetch and cache Clerk JWKS with concurrency-safe throttling."""
+    global _jwks_cache, _jwks_fetched_at, _jwks_last_refreshed_at
     now = time.monotonic()
-    if _jwks_cache and (now - _jwks_fetched_at) < _JWKS_TTL:
+    if not force and _jwks_cache and (now - _jwks_fetched_at) < _JWKS_TTL:
         return _jwks_cache
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(settings.clerk_jwks_url, timeout=10.0)
-        resp.raise_for_status()
-        _jwks_cache = resp.json()
-        _jwks_fetched_at = now
-    return _jwks_cache
+
+    async with _get_jwks_lock():
+        now = time.monotonic()
+        if not force and _jwks_cache and (now - _jwks_fetched_at) < _JWKS_TTL:
+            return _jwks_cache
+
+        # Concurrency-safe throttling: if force-refreshing, enforce minimum interval
+        if force and _jwks_cache and (now - _jwks_last_refreshed_at) < _JWKS_MIN_REFRESH_INTERVAL:
+            return _jwks_cache
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(settings.clerk_jwks_url, timeout=10.0)
+            resp.raise_for_status()
+            _jwks_cache = resp.json()
+            _jwks_fetched_at = now
+            _jwks_last_refreshed_at = now
+        return _jwks_cache
 
 
 # ---------------------------------------------------------------------------
@@ -206,8 +253,8 @@ async def require_clerk_user(
         "verify_iss": bool(expected_issuer),
     }
 
+    jwks = await _get_jwks()
     try:
-        jwks = await _get_jwks()
         payload = jwt.decode(
             token,
             jwks,
@@ -215,13 +262,25 @@ async def require_clerk_user(
             issuer=expected_issuer,
             options=decode_options,
         )
+    except (ExpiredSignatureError, JWTClaimsError) as exc:
+        # Claims verification failure (expired token, wrong issuer, invalid audience, etc.)
+        # Re-fetching JWKS cannot fix an expired token or mismatched claims.
+        logger.warning("JWT claims verification failed: %s", exc)
+        raise AuthenticationError("Invalid or expired token") from exc
     except JWTError as exc:
-        # On key rotation, clear cache and retry once
-        global _jwks_cache, _jwks_fetched_at
-        _jwks_cache = {}
-        _jwks_fetched_at = 0.0
+        # Check if there is a credible reason to believe the token uses a rotated/unknown signing key.
+        token_kid = _get_token_kid(token)
+        cached_kids = _get_cached_kids(jwks)
+
+        should_refresh = bool(token_kid and token_kid not in cached_kids)
+        if not should_refresh:
+            logger.warning("JWT verification failed: %s", exc)
+            raise AuthenticationError("Invalid or expired token") from exc
+
+        # On credible key rotation, refresh JWKS with throttling and retry once
+        logger.info("Token presents unknown kid '%s'; refreshing JWKS cache", token_kid)
         try:
-            jwks = await _get_jwks()
+            jwks = await _get_jwks(force=True)
             payload = jwt.decode(
                 token,
                 jwks,
@@ -230,7 +289,7 @@ async def require_clerk_user(
                 options=decode_options,
             )
         except JWTError as inner_exc:
-            logger.warning("JWT verification failed: %s", inner_exc)
+            logger.warning("JWT verification failed after JWKS refresh: %s", inner_exc)
             raise AuthenticationError("Invalid or expired token") from inner_exc
 
     clerk_id: str = payload.get("sub", "")

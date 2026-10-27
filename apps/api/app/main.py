@@ -61,18 +61,23 @@ async def limit_request_size(request: Request, call_next):
             pass
 
     if request.method in ("POST", "PUT", "PATCH"):
-        body = await request.body()
-        if len(body) > max_bytes:
-            return JSONResponse(
-                status_code=413,
-                content={
-                    "error": {
-                        "code": "PAYLOAD_TOO_LARGE",
-                        "message": f"Request body must not exceed {max_bytes} bytes",
-                        "request_id": getattr(request.state, "request_id", "unknown"),
-                    }
-                },
-            )
+        chunks: list[bytes] = []
+        bytes_received = 0
+        async for chunk in request.stream():
+            bytes_received += len(chunk)
+            if bytes_received > max_bytes:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "error": {
+                            "code": "PAYLOAD_TOO_LARGE",
+                            "message": f"Request body must not exceed {max_bytes} bytes",
+                            "request_id": getattr(request.state, "request_id", "unknown"),
+                        }
+                    },
+                )
+            chunks.append(chunk)
+        request._body = b"".join(chunks)
 
     return await call_next(request)
 
