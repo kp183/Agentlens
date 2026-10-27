@@ -278,7 +278,7 @@ pip install agentlens-py openai
 > [!NOTE]
 > Note that the package is installed via `agentlens-py`, but the Python import name remains `import agentlens as al`. Install your model provider package (such as `openai`, `anthropic`, or `langgraph`) alongside `agentlens-py`.
 >
-> The live example below requires an active `OPENAI_API_KEY` environment variable (`export OPENAI_API_KEY="your-key"` or `$env:OPENAI_API_KEY="your-key"`).
+> The live example below requires an active `OPENAI_API_KEY` environment variable (`export OPENAI_API_KEY="your-key"` or `$env:OPENAI_API_KEY="your-key"`). No API key? Run the offline demo: `python examples/offline_demo.py`.
 
 ```python
 import agentlens as al
@@ -303,6 +303,8 @@ al.flush()
 
 # Your trace appears live at http://localhost:3000
 ```
+
+No API key? Run the offline demo: `python examples/offline_demo.py`.
 
 For production deployment and multi-tenant authentication using Clerk, see [docs/production-setup.md](docs/production-setup.md).
 
