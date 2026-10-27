@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import traceback
 import uuid
 import time
@@ -12,13 +13,21 @@ from functools import wraps
 from typing import Any, Callable, List, Optional
 
 from agentlens.context import (
+    _current_llm_span_count,
     _current_span_id,
     _current_trace_id,
+    get_llm_span_count,
     get_span_id,
     get_trace_id,
+    increment_llm_span_count,
+    set_llm_span_count,
     set_span_id,
     set_trace_id,
 )
+
+logger = logging.getLogger("agentlens")
+_warned_no_llm_spans: bool = False
+
 
 
 def trace(name: Optional[str] = None, tags: Optional[List[str]] = None) -> Callable[..., Any]:
@@ -35,6 +44,7 @@ def trace(name: Optional[str] = None, tags: Optional[List[str]] = None) -> Calla
 
             trace_token = set_trace_id(trace_id)
             span_token = set_span_id(span_id)
+            llm_count_token = set_llm_span_count(0)
 
             span_name = name or func.__name__
             started_at = datetime.now(timezone.utc)
@@ -79,8 +89,19 @@ def trace(name: Optional[str] = None, tags: Optional[List[str]] = None) -> Calla
 
                 agentlens._global_client._safe_enqueue(span_payload)
 
+                llm_count = get_llm_span_count()
+                global _warned_no_llm_spans
+                if llm_count == 0 and not _warned_no_llm_spans:
+                    _warned_no_llm_spans = True
+                    logger.warning(
+                        "No LLM spans captured under @al.trace. Did you forget to call al.instrument_openai() or al.instrument_anthropic()?"
+                    )
+
                 _current_trace_id.reset(trace_token)
                 _current_span_id.reset(span_token)
+                _current_llm_span_count.reset(llm_count_token)
+                if llm_count > 0:
+                    increment_llm_span_count()
 
         return wrapper
     return decorator
