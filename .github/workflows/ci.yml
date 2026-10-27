@@ -57,8 +57,6 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql+asyncpg://pilot:pilot@127.0.0.1:${{ job.services.postgres.ports[5432] }}/pilot
-      REDIS_URL: redis://127.0.0.1:${{ job.services.redis.ports[6379] }}/0
       LOCAL_MODE: "true"
       PYTHONPATH: apps/api
 
@@ -78,11 +76,16 @@ jobs:
           pip install -e "./apps/api[dev]"
 
       - name: Run database migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://pilot:pilot@127.0.0.1:${{ job.services.postgres.ports[5432] }}/pilot
         run: |
           cd apps/api
           alembic upgrade head
 
       - name: Run API test suite
+        env:
+          DATABASE_URL: postgresql+asyncpg://pilot:pilot@127.0.0.1:${{ job.services.postgres.ports[5432] }}/pilot
+          REDIS_URL: redis://127.0.0.1:${{ job.services.redis.ports[6379] }}/0
         run: |
           pytest apps/api/tests -v
 
