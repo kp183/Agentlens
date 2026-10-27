@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
+import time
 import traceback
 import uuid
-import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import wraps
@@ -29,81 +30,159 @@ logger = logging.getLogger("agentlens")
 _warned_no_llm_spans: bool = False
 
 
-
 def trace(name: Optional[str] = None, tags: Optional[List[str]] = None) -> Callable[..., Any]:
-    """Decorator to mark a function as a trace root."""
+    """Decorator to mark a function as a trace root or nested trace span."""
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        @wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
-            import agentlens
-            if agentlens._global_client is None or not agentlens._global_client.enabled:
-                return func(*args, **kwargs)
+        if inspect.iscoroutinefunction(func):
+            @wraps(func)
+            async def async_wrapper(*args, **kwargs) -> Any:
+                import agentlens
+                if agentlens._global_client is None or not agentlens._global_client.enabled:
+                    return await func(*args, **kwargs)
 
-            trace_id = str(uuid.uuid4())
-            span_id = str(uuid.uuid4())
+                parent_trace_id = get_trace_id()
+                is_root = parent_trace_id is None
+                trace_id = parent_trace_id if not is_root else str(uuid.uuid4())
+                parent_span_id = get_span_id() if not is_root else None
+                span_id = str(uuid.uuid4())
 
-            trace_token = set_trace_id(trace_id)
-            span_token = set_span_id(span_id)
-            llm_count_token = set_llm_span_count(0)
+                trace_token = set_trace_id(trace_id)
+                span_token = set_span_id(span_id)
+                llm_count_token = set_llm_span_count(0) if is_root else None
 
-            span_name = name or func.__name__
-            started_at = datetime.now(timezone.utc)
-            start_time = time.time()
+                span_name = name or func.__name__
+                started_at = datetime.now(timezone.utc)
+                start_time = time.time()
 
-            status = "success"
-            error_type = None
-            error_message = None
-            error_stack = None
+                status = "success"
+                error_type = None
+                error_message = None
+                error_stack = None
 
-            try:
-                result = func(*args, **kwargs)
-                return result
-            except Exception as e:
-                status = "error"
-                error_type = type(e).__name__
-                error_message = str(e)
-                error_stack = traceback.format_exc()
-                raise e
-            finally:
-                ended_at = datetime.now(timezone.utc)
-                duration_ms = int((time.time() - start_time) * 1000)
+                try:
+                    result = await func(*args, **kwargs)
+                    return result
+                except Exception as e:
+                    status = "error"
+                    error_type = type(e).__name__
+                    error_message = str(e)
+                    error_stack = traceback.format_exc()
+                    raise e
+                finally:
+                    ended_at = datetime.now(timezone.utc)
+                    duration_ms = int((time.time() - start_time) * 1000)
 
-                span_payload = {
-                    "id": span_id,
-                    "trace_id": trace_id,
-                    "parent_span_id": None,
-                    "name": span_name,
-                    "span_type": "custom",
-                    "status": status,
-                    "started_at": started_at.isoformat(),
-                    "ended_at": ended_at.isoformat(),
-                    "duration_ms": duration_ms,
-                    "tags": tags or [],
-                }
-                if error_type:
-                    span_payload.update({
-                        "error_type": error_type,
-                        "error_message": error_message,
-                        "error_stack": error_stack,
-                    })
+                    span_payload = {
+                        "id": span_id,
+                        "trace_id": trace_id,
+                        "parent_span_id": parent_span_id,
+                        "name": span_name,
+                        "span_type": "custom",
+                        "status": status,
+                        "started_at": started_at.isoformat(),
+                        "ended_at": ended_at.isoformat(),
+                        "duration_ms": duration_ms,
+                        "tags": tags or [],
+                    }
+                    if error_type:
+                        span_payload.update({
+                            "error_type": error_type,
+                            "error_message": error_message,
+                            "error_stack": error_stack,
+                        })
 
-                agentlens._global_client._safe_enqueue(span_payload)
+                    agentlens._global_client._safe_enqueue(span_payload)
 
-                llm_count = get_llm_span_count()
-                global _warned_no_llm_spans
-                if llm_count == 0 and not _warned_no_llm_spans:
-                    _warned_no_llm_spans = True
-                    logger.warning(
-                        "No LLM spans captured under @al.trace. Did you forget to call al.instrument_openai() or al.instrument_anthropic()?"
-                    )
+                    if is_root:
+                        llm_count = get_llm_span_count()
+                        global _warned_no_llm_spans
+                        if llm_count == 0 and not _warned_no_llm_spans:
+                            _warned_no_llm_spans = True
+                            logger.warning(
+                                "No LLM spans captured under @al.trace. Did you forget to call al.instrument_openai() or al.instrument_anthropic()?"
+                            )
+                        if llm_count_token is not None:
+                            _current_llm_span_count.reset(llm_count_token)
 
-                _current_trace_id.reset(trace_token)
-                _current_span_id.reset(span_token)
-                _current_llm_span_count.reset(llm_count_token)
-                if llm_count > 0:
-                    increment_llm_span_count()
+                    _current_span_id.reset(span_token)
+                    _current_trace_id.reset(trace_token)
 
-        return wrapper
+            return async_wrapper
+        else:
+            @wraps(func)
+            def sync_wrapper(*args, **kwargs) -> Any:
+                import agentlens
+                if agentlens._global_client is None or not agentlens._global_client.enabled:
+                    return func(*args, **kwargs)
+
+                parent_trace_id = get_trace_id()
+                is_root = parent_trace_id is None
+                trace_id = parent_trace_id if not is_root else str(uuid.uuid4())
+                parent_span_id = get_span_id() if not is_root else None
+                span_id = str(uuid.uuid4())
+
+                trace_token = set_trace_id(trace_id)
+                span_token = set_span_id(span_id)
+                llm_count_token = set_llm_span_count(0) if is_root else None
+
+                span_name = name or func.__name__
+                started_at = datetime.now(timezone.utc)
+                start_time = time.time()
+
+                status = "success"
+                error_type = None
+                error_message = None
+                error_stack = None
+
+                try:
+                    result = func(*args, **kwargs)
+                    return result
+                except Exception as e:
+                    status = "error"
+                    error_type = type(e).__name__
+                    error_message = str(e)
+                    error_stack = traceback.format_exc()
+                    raise e
+                finally:
+                    ended_at = datetime.now(timezone.utc)
+                    duration_ms = int((time.time() - start_time) * 1000)
+
+                    span_payload = {
+                        "id": span_id,
+                        "trace_id": trace_id,
+                        "parent_span_id": parent_span_id,
+                        "name": span_name,
+                        "span_type": "custom",
+                        "status": status,
+                        "started_at": started_at.isoformat(),
+                        "ended_at": ended_at.isoformat(),
+                        "duration_ms": duration_ms,
+                        "tags": tags or [],
+                    }
+                    if error_type:
+                        span_payload.update({
+                            "error_type": error_type,
+                            "error_message": error_message,
+                            "error_stack": error_stack,
+                        })
+
+                    agentlens._global_client._safe_enqueue(span_payload)
+
+                    if is_root:
+                        llm_count = get_llm_span_count()
+                        global _warned_no_llm_spans
+                        if llm_count == 0 and not _warned_no_llm_spans:
+                            _warned_no_llm_spans = True
+                            logger.warning(
+                                "No LLM spans captured under @al.trace. Did you forget to call al.instrument_openai() or al.instrument_anthropic()?"
+                            )
+                        if llm_count_token is not None:
+                            _current_llm_span_count.reset(llm_count_token)
+
+                    _current_span_id.reset(span_token)
+                    _current_trace_id.reset(trace_token)
+
+            return sync_wrapper
     return decorator
 
 

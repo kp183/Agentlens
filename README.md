@@ -10,7 +10,7 @@
 [![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat&logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Redis 7](https://img.shields.io/badge/Redis-7-DC382D?style=flat&logo=redis&logoColor=white)](https://redis.io)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white)](https://docker.com)
-[![Tests](https://img.shields.io/badge/tests-86%20passed-brightgreen?style=flat)](.)
+[![Tests](https://img.shields.io/badge/tests-88%20passed-brightgreen?style=flat)](.)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat)](LICENSE)
 
 **Capture trace hierarchies · Analyze nested tool calls · Monitor token costs in real-time**
@@ -60,7 +60,7 @@
 - 🛠️ **Tool Span Inspector** — Dedicated tool execution details view for input/output payloads and error diagnosis
 - 🔐 **Multi-Tenant Security** — Clerk-based authentication, org/project scoping, and tenant-isolated API keys
 - ⚡ **Non-Blocking SDK** — Thread-safe daemon worker with background queue for zero-overhead tracing
-- 🧪 **Comprehensive Test Suite** — 86 tests (59 API, 27 SDK) covering unit, integration, property-based (Hypothesis), and smoke testing
+- 🧪 **88 automated tests (unit, integration, property, smoke)** (59 API, 29 SDK)
 - 📊 **Cursor Pagination** — Efficient, production-grade pagination for trace listing endpoints
 
 ---
@@ -279,7 +279,7 @@ pip install agentlens-py openai
 > [!NOTE]
 > Note that the package is installed via `agentlens-py`, but the Python import name remains `import agentlens as al`. Install your model provider package (such as `openai`, `anthropic`, or `langgraph`) alongside `agentlens-py`.
 >
-> The live example below requires an active `OPENAI_API_KEY` environment variable (`export OPENAI_API_KEY="your-key"` or `$env:OPENAI_API_KEY="your-key"`). No API key? Run the offline demo: `python examples/offline_demo.py`.
+> The live example below requires an active `OPENAI_API_KEY` environment variable (`export OPENAI_API_KEY="your-key"` or `$env:OPENAI_API_KEY="your-key"`). No OpenAI key? Run the simulated offline demo: `python examples/offline_demo.py`.
 
 ```python
 import agentlens as al
@@ -487,7 +487,7 @@ All responses follow the envelope format: `{"data": ..., "meta": {...}}`
 
 ## 🧪 Testing & Quality
 
-The test suite includes **59 backend tests** and **27 SDK tests** (86 total) spanning four testing strategies:
+The test suite includes **59 backend tests** and **29 SDK tests** (88 total) spanning four testing strategies:
 
 ```bash
 # Run everything
