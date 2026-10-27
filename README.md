@@ -257,6 +257,12 @@ agentlens/
 
 ## 🚀 Quick Start
 
+> [!IMPORTANT]
+> **Prerequisites & Port Availability:**
+> Ensure host ports `3000` (Web Dashboard), `8000` (FastAPI), `5432` (PostgreSQL), and `6379` (Redis) are free before running Docker Compose:
+> - **PowerShell:** `Get-NetTCPConnection -LocalPort 3000, 8000, 5432, 6379`
+> - **Bash:** `lsof -i :3000,8000,5432,6379`
+
 ```bash
 git clone https://github.com/kp183/agentlens.git
 cd agentlens
@@ -271,6 +277,8 @@ pip install agentlens-py openai
 
 > [!NOTE]
 > Note that the package is installed via `agentlens-py`, but the Python import name remains `import agentlens as al`. Install your model provider package (such as `openai`, `anthropic`, or `langgraph`) alongside `agentlens-py`.
+>
+> The live example below requires an active `OPENAI_API_KEY` environment variable (`export OPENAI_API_KEY="your-key"` or `$env:OPENAI_API_KEY="your-key"`).
 
 ```python
 import agentlens as al
