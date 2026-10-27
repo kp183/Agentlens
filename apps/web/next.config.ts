@@ -1,7 +1,8 @@
+import path from "path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // No experimental flags needed for MVP
+  outputFileTracingRoot: path.resolve(__dirname),
 };
 
 export default nextConfig;

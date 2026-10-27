@@ -15,8 +15,7 @@ What this shows:
      kimi-k2.7-code, etc.) comes back with cost_usd = 0.0.
 
 Setup:
-  pip install -e packages/python-sdk
-  pip install openai
+  pip install agentlens-py openai
   export AGENTLENS_API_KEY="al_live_..."
   export AGENTLENS_BASE_URL="http://localhost:8000"
   export COMETAPI_KEY="sk-..."
