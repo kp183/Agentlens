@@ -42,7 +42,7 @@ _jwks_cache: Any = {}
 _jwks_fetched_at: float = 0.0
 _jwks_last_refreshed_at: float = 0.0
 _JWKS_TTL = 3600  # seconds (cache lifetime)
-_JWKS_MIN_REFRESH_INTERVAL = 10.0  # minimum seconds between forced key-rotation refreshes
+_JWKS_MIN_REFRESH_INTERVAL = 30.0  # minimum seconds between forced key-rotation refreshes (throttling)
 _jwks_lock: asyncio.Lock | None = None
 
 

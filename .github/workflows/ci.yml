@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main, fix/pilot-findings]
+  pull_request:
+    branches: [main]
+
+jobs:
+  sdk:
+    name: Python SDK Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install SDK dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "./packages/python-sdk[dev]"
+
+      - name: Run SDK tests
+        run: |
+          pytest packages/python-sdk/tests -v
+
+  api:
+    name: FastAPI Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pilot
+          POSTGRES_PASSWORD: pilot
+          POSTGRES_DB: pilot
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379/tcp
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://pilot:pilot@127.0.0.1:${{ job.services.postgres.ports[5432] }}/pilot
+      REDIS_URL: redis://127.0.0.1:${{ job.services.redis.ports[6379] }}/0
+      LOCAL_MODE: "true"
+      PYTHONPATH: apps/api
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install API dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "./apps/api[dev]"
+
+      - name: Run database migrations
+        run: |
+          cd apps/api
+          alembic upgrade head
+
+      - name: Run API test suite
+        run: |
+          pytest apps/api/tests -v
+
+  web:
+    name: Web Lint, Typecheck, and Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Run ESLint
+        working-directory: apps/web
+        run: npm run lint
+
+      - name: Check TypeScript types
+        working-directory: apps/web
+        run: npx tsc --noEmit
+
+      - name: Build Next.js app
+        working-directory: apps/web
+        run: npm run build
