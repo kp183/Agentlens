@@ -44,8 +44,15 @@ import {
   Wrench,
   ExternalLink,
   Cpu,
-  GitCompare
+  GitCompare,
 } from "lucide-react";
+
+function formatCost(cost: number | null | undefined): string {
+  if (cost === null || cost === undefined || cost === 0) return "$0.00";
+  if (cost < 0.0001) return "<$0.0001";
+  if (cost < 0.01) return `$${Number(cost).toFixed(4)}`;
+  return `$${Number(cost).toFixed(2)}`;
+}
 
 export default function DashboardPage() {
   const { isLoaded, userId, getToken } = useAuth();
@@ -1130,9 +1137,7 @@ al.instrument_openai()`}
                             {trace.duration_ms ? `${(trace.duration_ms / 1000).toFixed(2)}s` : "—"}
                           </td>
                           <td className="px-6 py-4 text-slate-300 font-mono">
-                            {trace.total_cost_usd === null || trace.total_cost_usd === undefined || trace.total_cost_usd === 0 ? "$0.00" :
-                             trace.total_cost_usd < 0.01 ? `$${Number(trace.total_cost_usd).toFixed(4)}` :
-                             `$${Number(trace.total_cost_usd).toFixed(2)}`}
+                            {formatCost(trace.total_cost_usd)}
                           </td>
                           <td className="px-6 py-4 font-mono text-slate-400 text-xs">
                             {(trace.total_tokens ?? 0).toLocaleString()}
@@ -1197,9 +1202,7 @@ al.instrument_openai()`}
                     <div>
                       <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">Total Cost</div>
                       <div className="font-semibold text-slate-200 font-mono">
-                        {traceDetail.total_cost_usd === null || traceDetail.total_cost_usd === undefined || traceDetail.total_cost_usd === 0 ? "$0.00" :
-                         traceDetail.total_cost_usd < 0.01 ? `$${Number(traceDetail.total_cost_usd).toFixed(4)}` :
-                         `$${Number(traceDetail.total_cost_usd).toFixed(2)}`}
+                        {formatCost(traceDetail.total_cost_usd)}
                       </div>
                     </div>
                   </div>
@@ -1335,7 +1338,7 @@ al.instrument_openai()`}
                           )}
                           {selectedSpanObj.cost_usd !== null && selectedSpanObj.cost_usd !== undefined && selectedSpanObj.cost_usd > 0 && (
                             <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded">
-                              Cost: ${selectedSpanObj.cost_usd.toFixed(4)}
+                              Cost: {formatCost(selectedSpanObj.cost_usd)}
                             </span>
                           )}
                         </div>
