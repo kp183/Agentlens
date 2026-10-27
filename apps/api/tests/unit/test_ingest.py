@@ -158,3 +158,118 @@ def test_partial_validation_failure_schema_rejects_invalid_type() -> None:
     assert resp.status_code == 422, (
         f"Expected 422, got {resp.status_code}: {resp.text}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Maximum request body size enforcement (413 Payload Too Large)
+# ---------------------------------------------------------------------------
+
+def test_ingest_oversized_content_length_returns_413() -> None:
+    """A request whose Content-Length exceeds max_request_size_bytes returns 413."""
+    from app.config import get_settings
+    settings = get_settings()
+
+    with patch.object(settings, "max_request_size_bytes", 1024):  # 1 KB limit
+        with _test_client() as client:
+            resp = client.post(
+                "/v1/ingest",
+                headers={
+                    "Authorization": "Bearer al_live_test",
+                    "Content-Length": "2048",
+                },
+                content=b"x" * 2048,
+            )
+    assert resp.status_code == 413
+    data = resp.json()
+    assert data["error"]["code"] == "PAYLOAD_TOO_LARGE"
+    assert "1024" in data["error"]["message"]
+
+
+def test_ingest_oversized_body_stream_returns_413() -> None:
+    """A request whose buffered body exceeds max_request_size_bytes returns 413."""
+    from app.config import get_settings
+    settings = get_settings()
+
+    with patch.object(settings, "max_request_size_bytes", 500):  # 500 bytes limit
+        with _test_client() as client:
+            resp = client.post(
+                "/v1/ingest",
+                headers={"Authorization": "Bearer al_live_test"},
+                json={"spans": [_valid_span(input={"huge": "x" * 1000})]},
+            )
+    assert resp.status_code == 413
+    data = resp.json()
+    assert data["error"]["code"] == "PAYLOAD_TOO_LARGE"
+    assert "500" in data["error"]["message"]
+
+
+def test_ingest_payload_within_limit_passes_size_check() -> None:
+    """A request within size limit passes the size middleware (auth/schema tested)."""
+    from app.config import get_settings
+    from app.middleware.auth import require_api_key
+
+    settings = get_settings()
+    app.dependency_overrides[require_api_key] = lambda: _make_project()
+
+    with patch.object(settings, "max_request_size_bytes", 10 * 1024 * 1024):  # 10 MB
+        with _test_client() as client:
+            resp = client.post(
+                "/v1/ingest",
+                headers={"Authorization": "Bearer al_live_test"},
+                json={"spans": [_valid_span()]},
+            )
+    # Status should not be 413
+    assert resp.status_code != 413
+
+
+def test_ingest_chunked_oversized_body_returns_413() -> None:
+    """A streaming/chunked body exceeding max_request_size_bytes returns 413 without loading entire payload."""
+    from app.config import get_settings
+    settings = get_settings()
+
+    def stream_oversized():
+        # Yield chunks that cumulatively exceed limit
+        for _ in range(20):
+            yield b"x" * 100
+
+    with patch.object(settings, "max_request_size_bytes", 500):  # 500 bytes limit
+        with _test_client() as client:
+            resp = client.post(
+                "/v1/ingest",
+                headers={"Authorization": "Bearer al_live_test"},
+                content=stream_oversized(),
+            )
+    assert resp.status_code == 413
+    data = resp.json()
+    assert data["error"]["code"] == "PAYLOAD_TOO_LARGE"
+    assert "500" in data["error"]["message"]
+
+
+def test_ingest_chunked_normal_body_passes_size_check() -> None:
+    """A chunked stream within size limit passes through and is processed downstream."""
+    import json
+    from app.config import get_settings
+    from app.middleware.auth import require_api_key
+
+    settings = get_settings()
+    app.dependency_overrides[require_api_key] = lambda: _make_project()
+
+    payload_bytes = json.dumps({"spans": [_valid_span()]}).encode("utf-8")
+
+    def stream_normal():
+        chunk_size = 32
+        for i in range(0, len(payload_bytes), chunk_size):
+            yield payload_bytes[i:i + chunk_size]
+
+    with patch.object(settings, "max_request_size_bytes", 1024 * 1024):  # 1 MB
+        with _test_client() as client:
+            resp = client.post(
+                "/v1/ingest",
+                headers={
+                    "Authorization": "Bearer al_live_test",
+                    "Content-Type": "application/json",
+                },
+                content=stream_normal(),
+            )
+    assert resp.status_code != 413
+

@@ -54,7 +54,7 @@
 
 - 🔄 **Real-Time Streaming** — WebSocket-powered live span updates via Redis Pub/Sub
 - 🌳 **Hierarchical Trace Trees** — Nested parent-child span relationships with Gantt chart visualization
-- 💰 **Automatic Cost Tracking** — Built-in pricing engine for OpenAI & Anthropic models with automatic CometAPI catalog pricing sync
+- 💰 **Automatic Cost Tracking** — Built-in pricing engine for OpenAI & Anthropic models with CometAPI catalog pricing sync utility (`python -m agentlens.pricing_sync`)
 - 🔌 **Zero-Config Instrumentation** — Monkey-patch OpenAI, Anthropic, CometAPI gateways, and LangGraph with a single function call
 - 🔀 **Trace Diffing** — Side-by-side execution comparison and diff visualization for prompt/model iterations
 - 🛠️ **Tool Span Inspector** — Dedicated tool execution details view for input/output payloads and error diagnosis
@@ -187,7 +187,7 @@ agentlens/
 │   │   │   └── versions/
 │   │   │       └── 001_initial_schema.py
 │   │   │
-│   │   └── tests/                   # Backend test suite (43 tests)
+│   │   └── tests/                   # Backend test suite (44 tests)
 │   │       ├── conftest.py          # Shared pytest fixtures (mock DB, mock Redis, test client)
 │   │       │
 │   │       ├── unit/                # (contains __init__.py for pytest discovery)
@@ -243,9 +243,11 @@ agentlens/
         │       ├── openai.py        #   Monkey-patch for openai.ChatCompletions
         │       └── anthropic.py     #   Monkey-patch for anthropic.Messages
         │
-        └── tests/                   # SDK test suite (12 tests)
+        └── tests/                   # SDK test suite
             ├── unit/
-            │   └── test_queue.py        # Queue worker, flush, thread safety
+            │   ├── test_queue.py        # Queue worker, flush, thread safety
+            │   ├── test_redaction.py    # Configurable prompt/completion capture & redaction
+            │   └── test_openai_provider.py
             └── property/
                 ├── test_pricing_properties.py   # Cost calculation invariants
                 └── test_sdk_properties.py       # Payload structure invariants
@@ -264,17 +266,34 @@ docker compose up --build
 ```
 
 ```bash
-pip install agentlens-py
+pip install agentlens-py openai
 ```
 
 > [!NOTE]
-> Note that the package is installed via `agentlens-py`, but the Python import name remains `import agentlens as al`.
+> Note that the package is installed via `agentlens-py`, but the Python import name remains `import agentlens as al`. Install your model provider package (such as `openai`, `anthropic`, or `langgraph`) alongside `agentlens-py`.
 
 ```python
 import agentlens as al
+import openai
+
+# 1. Initialize SDK & instrument provider
 al.init(api_key="local-dev-key", base_url="http://localhost:8000")
 al.instrument_openai()
-# Your traces appear at http://localhost:3000
+
+client = openai.OpenAI()
+
+# 2. Execute an LLM call inside a traced context
+@al.trace(name="Quickstart Run")
+def main():
+    return client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "Hello AgentLens!"}],
+    )
+
+response = main()
+al.flush()
+
+# Your trace appears live at http://localhost:3000
 ```
 
 For production deployment and multi-tenant authentication using Clerk, see [docs/production-setup.md](docs/production-setup.md).
@@ -340,17 +359,55 @@ al.flush()  # Ensure all spans are sent before exit
 
 ### What Gets Captured Automatically
 
-| Field | Description |
-|-------|-------------|
-| `trace_id` | Groups related spans into a single trace |
-| `span_id` | Unique identifier for each operation |
-| `parent_span_id` | Links child spans to parents (trace tree) |
-| `model` | LLM model used (e.g., `gpt-4o-mini`) |
-| `input_tokens` / `output_tokens` | Token consumption from the API response |
-| `cost_usd` | Automatically calculated from built-in pricing tables |
-| `duration_ms` | Wall-clock execution time |
-| `input` / `output` | Prompt messages and completion responses |
-| `status` | `success` or `error` with stack trace on failure |
+By default, AgentLens records prompts, completions, operational metrics, and error diagnostics to facilitate observability and debugging.
+
+| Field | Description | Default Behavior |
+|-------|-------------|------------------|
+| `id` / `span_id` | Unique UUID identifier for each operation span | Always generated |
+| `trace_id` | UUID linking related spans into a single execution tree | Inherited or generated |
+| `parent_span_id` | UUID linking child spans to parent steps | Assigned via context hierarchy |
+| `name` | Human-readable name of the span or function | Function name or custom label |
+| `span_type` | Span category: `llm`, `tool`, `agent`, or `custom` | Inferred from provider or decorator |
+| `model` | LLM model identifier (e.g., `gpt-4o-mini`, `claude-3-5-sonnet`) | Extracted from API request |
+| `provider` | Resolved LLM provider or gateway (e.g. `openai`, `cometapi`) | Auto-resolved from client `base_url` |
+| `started_at` / `ended_at` | RFC 3339 timestamps for start and completion | Measured automatically |
+| `duration_ms` | Wall-clock execution time in milliseconds | Computed automatically |
+| `input_tokens` / `output_tokens` | Token usage from API response | Extracted from provider response |
+| `cost_usd` | Estimated USD cost calculated from pricing tables | Computed from token counts |
+| `input` | Prompt messages, input arguments, or user queries | **Captured by default** (configurable) |
+| `output` | Generated completion texts, tool outputs, or return values | **Captured by default** (configurable) |
+| `status` | Operation outcome: `success` or `error` | Set automatically |
+| `error_type` / `error_message` / `error_stack` | Exception diagnostics when an operation fails | Captured on exceptions |
+
+> [!IMPORTANT]
+> **API Key Safety:** Your AgentLens project API key is transmitted exclusively in the HTTP `Authorization: Bearer <key>` request header. Model provider keys (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) are **never** captured, stored, or transmitted.
+
+### Configuring Privacy, Capture & Redaction
+
+You can selectively opt out of prompt or completion collection or automatically mask sensitive fields:
+
+```python
+import agentlens as al
+
+# Initialize with prompt/completion capture disabled or custom redaction
+al.init(
+    api_key="al_live_YOUR_API_KEY",
+    capture_prompts=False,       # Set to False to omit prompt messages entirely
+    capture_completions=False,   # Set to False to omit LLM outputs entirely
+    redact_fields=["password", "secret", "token", "ssn", "api_key"],  # Mask as [REDACTED]
+    # Optional custom redaction function: (field_name, field_value) -> sanitized_value
+    redact_fn=lambda key, val: "[FILTERED]" if "ssn" in key.lower() else val,
+)
+```
+
+You can also control capture and redaction without code changes using environment variables:
+```bash
+export AGENTLENS_CAPTURE_PROMPTS=false
+export AGENTLENS_CAPTURE_COMPLETIONS=false
+export AGENTLENS_REDACT_FIELDS="password,token,secret,ssn"
+```
+
+For complete details on data transmission and sanitization guarantees, see [Privacy, Redaction & Data Transmission](packages/python-sdk/README.md#privacy-redaction--data-transmission).
 
 ---
 

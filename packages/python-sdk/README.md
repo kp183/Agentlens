@@ -24,16 +24,36 @@ pip install agentlens-py
 
 ---
 
-## Quick Start (2-Line Integration)
+## Quick Start
 
-Instrument your application to capture all OpenAI completions automatically:
+Instrument your application and generate your first trace in seconds:
+
+```bash
+pip install agentlens-py openai
+```
 
 ```python
 import agentlens as al
+import openai
 
-# Initialize the global client and instrument the OpenAI SDK
+# 1. Initialize the global client and instrument OpenAI
 al.init(api_key="al_live_YOUR_API_KEY_HERE", base_url="http://localhost:8000")
 al.instrument_openai()
+
+client = openai.OpenAI()
+
+# 2. Establish a trace root using @al.trace
+@al.trace(name="My First Agent Run")
+def main():
+    return client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "Explain quantizing neural networks."}],
+    )
+
+response = main()
+al.flush()
+
+# Traces appear live in your dashboard at http://localhost:3000
 ```
 
 ---
@@ -63,6 +83,8 @@ def run_assistant(user_query: str):
 
 ### Auto-Instrumentation Examples
 
+Auto-instrumented calls must be executed within an `@al.trace` context so spans are properly grouped and organized into a hierarchical trace tree:
+
 #### OpenAI (Both Streaming & Non-Streaming)
 
 ```python
@@ -74,11 +96,16 @@ al.instrument_openai()
 
 client = openai.OpenAI()
 
-# Spans are automatically created for completions, including token counts and costs
-response = client.chat.completions.create(
-    model="gpt-4o",
-    messages=[{"role": "user", "content": "Explain quantizing neural networks."}]
-)
+@al.trace(name="OpenAI Generation")
+def generate():
+    # Spans are automatically created for completions, including token counts and costs
+    return client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Explain quantizing neural networks."}]
+    )
+
+generate()
+al.flush()
 ```
 
 #### Anthropic (Both Streaming & Non-Streaming)
@@ -92,11 +119,16 @@ al.instrument_anthropic()
 
 client = anthropic.Anthropic()
 
-response = client.messages.create(
-    model="claude-3-5-sonnet-20241022",
-    max_tokens=1000,
-    messages=[{"role": "user", "content": "What is reinforcement learning?"}]
-)
+@al.trace(name="Anthropic Generation")
+def generate():
+    return client.messages.create(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=1000,
+        messages=[{"role": "user", "content": "What is reinforcement learning?"}]
+    )
+
+generate()
+al.flush()
 ```
 
 #### LangGraph Auto-Instrumentation
@@ -110,20 +142,79 @@ al.instrument_langgraph()
 
 # All LangGraph CompiledStateGraph invocations automatically record
 # node transitions, routing decisions, and tool executions as nested spans
-graph = builder.compile()
-graph.invoke({"messages": [("user", "Calculate 2 + 2")]})
+@al.trace(name="LangGraph Workflow")
+def run_graph():
+    graph = builder.compile()
+    return graph.invoke({"messages": [("user", "Calculate 2 + 2")]})
+
+run_graph()
+al.flush()
+```
+
+---
+
+## 🔒 Privacy, Redaction & Data Transmission
+
+By default, AgentLens records prompts (`input`), completions (`output`), token counts, model names, latency, and exception details to help you debug and inspect agents.
+
+### Data Collection & Transmission Statement
+When tracing is enabled, AgentLens transmits JSON batches to `{base_url}/v1/ingest` containing:
+- `id`, `trace_id`, `parent_span_id`: Span identifiers for hierarchy.
+- `name`, `span_type`, `model`, `provider`: Operational metadata.
+- `duration_ms`, `started_at`, `ended_at`: Performance metrics.
+- `input_tokens`, `output_tokens`, `cost_usd`: Token accounting and estimated cost.
+- `input`: Prompts and messages (unless disabled or redacted).
+- `output`: Generated completions and tool calls (unless disabled or redacted).
+- `error_type`, `error_message`, `error_stack`: Failure diagnostics (when calls fail).
+
+Your AgentLens API key is sent in the `Authorization: Bearer <key>` header and is never included in the payload. Provider API keys (e.g. OpenAI / Anthropic keys) are never transmitted.
+
+### Configuring Prompt & Completion Capture
+You can disable capture of prompts or completions globally:
+
+```python
+al.init(
+    api_key="al_live_...",
+    capture_prompts=False,       # Omit prompt/input contents entirely
+    capture_completions=False,   # Omit completion/output contents entirely
+)
+```
+Or via environment variables:
+```bash
+export AGENTLENS_CAPTURE_PROMPTS=false
+export AGENTLENS_CAPTURE_COMPLETIONS=false
+```
+
+### Field-Level Redaction
+You can specify sensitive keys (e.g., passwords, tokens, PII) to automatically mask as `"[REDACTED]"` in all nested inputs, outputs, error messages, and metadata:
+
+```python
+al.init(
+    api_key="al_live_...",
+    redact_fields=["password", "secret", "token", "ssn", "api_key"],
+    # Optional custom redaction callable: (key, value) -> sanitized_value
+    redact_fn=lambda key, val: "***" if "secret" in key.lower() else val,
+)
+```
+Or via environment variable:
+```bash
+export AGENTLENS_REDACT_FIELDS="password,token,secret,credit_card"
 ```
 
 ---
 
 ## Public API Reference
 
-### `al.init(api_key: str, base_url: str = "http://localhost:8000", debug: bool = False, enabled: bool = True) -> None`
+### `al.init(...) -> AgentLensClient`
 Configures the global AgentLens client, spins up the thread-safe background ingestion worker, and registers an `atexit` hook to flush remaining spans on application termination.
 - `api_key`: Your active AgentLens project API key (prefixed with `al_live_`).
-- `base_url`: Endpoint of your FastAPI backend.
+- `base_url`: Endpoint of your FastAPI backend (default: `http://localhost:8000`).
 - `debug`: Enable internal logging for SDK debugging.
 - `enabled`: If set to `False`, all tracing operations, monkey-patches, and decorators gracefully fallback to no-ops.
+- `capture_inputs` / `capture_prompts`: Set to `False` to omit prompts and input payloads (default: `True`).
+- `capture_outputs` / `capture_completions`: Set to `False` to omit generated completions and outputs (default: `True`).
+- `redact_fields`: List of case-insensitive field names to redact as `"[REDACTED]"`.
+- `redact_fn`: Optional callable `(key, value) -> redacted_value` for custom value masking.
 
 ### `al.trace(name: str | None = None, tags: list[str] | None = None)`
 Decorator to declare a new root trace context. Propagates the trace context down the execution tree.

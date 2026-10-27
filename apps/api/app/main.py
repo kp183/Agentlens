@@ -42,18 +42,43 @@ app = FastAPI(
 
 @app.middleware("http")
 async def limit_request_size(request: Request, call_next):
+    max_bytes = settings.max_request_size_bytes
     content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > 5 * 1024 * 1024:
-        return JSONResponse(
-            status_code=413,
-            content={
-                "error": {
-                    "code": "PAYLOAD_TOO_LARGE",
-                    "message": "Request body must not exceed 5MB",
-                    "request_id": getattr(request.state, "request_id", "unknown"),
-                }
-            },
-        )
+    if content_length:
+        try:
+            if int(content_length) > max_bytes:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "error": {
+                            "code": "PAYLOAD_TOO_LARGE",
+                            "message": f"Request body must not exceed {max_bytes} bytes",
+                            "request_id": getattr(request.state, "request_id", "unknown"),
+                        }
+                    },
+                )
+        except ValueError:
+            pass
+
+    if request.method in ("POST", "PUT", "PATCH"):
+        chunks: list[bytes] = []
+        bytes_received = 0
+        async for chunk in request.stream():
+            bytes_received += len(chunk)
+            if bytes_received > max_bytes:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "error": {
+                            "code": "PAYLOAD_TOO_LARGE",
+                            "message": f"Request body must not exceed {max_bytes} bytes",
+                            "request_id": getattr(request.state, "request_id", "unknown"),
+                        }
+                    },
+                )
+            chunks.append(chunk)
+        request._body = b"".join(chunks)
+
     return await call_next(request)
 
 @app.middleware("http")
