@@ -28,3 +28,19 @@ def set_trace_id(value: Optional[str]):
 
 def set_span_id(value: Optional[str]):
     return _current_span_id.set(value)
+
+
+_current_llm_span_count: ContextVar[int] = ContextVar("_current_llm_span_count", default=0)
+
+
+def get_llm_span_count() -> int:
+    return _current_llm_span_count.get()
+
+
+def set_llm_span_count(value: int):
+    return _current_llm_span_count.set(value)
+
+
+def increment_llm_span_count() -> None:
+    _current_llm_span_count.set(_current_llm_span_count.get() + 1)
+

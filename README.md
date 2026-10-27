@@ -10,7 +10,7 @@
 [![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat&logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Redis 7](https://img.shields.io/badge/Redis-7-DC382D?style=flat&logo=redis&logoColor=white)](https://redis.io)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white)](https://docker.com)
-[![Tests](https://img.shields.io/badge/tests-63%20passed-brightgreen?style=flat)](.)
+[![Tests](https://img.shields.io/badge/tests-88%20passed-brightgreen?style=flat)](.)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat)](LICENSE)
 
 **Capture trace hierarchies · Analyze nested tool calls · Monitor token costs in real-time**
@@ -60,7 +60,7 @@
 - 🛠️ **Tool Span Inspector** — Dedicated tool execution details view for input/output payloads and error diagnosis
 - 🔐 **Multi-Tenant Security** — Clerk-based authentication, org/project scoping, and tenant-isolated API keys
 - ⚡ **Non-Blocking SDK** — Thread-safe daemon worker with background queue for zero-overhead tracing
-- 🧪 **Premium Test Suite** — 63 tests covering unit, integration, property-based (Hypothesis), and smoke testing
+- 🧪 **88 automated tests (unit, integration, property, smoke)** (59 API, 29 SDK)
 - 📊 **Cursor Pagination** — Efficient, production-grade pagination for trace listing endpoints
 
 ---
@@ -187,12 +187,13 @@ agentlens/
 │   │   │   └── versions/
 │   │   │       └── 001_initial_schema.py
 │   │   │
-│   │   └── tests/                   # Backend test suite (44 tests)
+│   │   └── tests/                   # Backend test suite (59 tests)
 │   │       ├── conftest.py          # Shared pytest fixtures (mock DB, mock Redis, test client)
 │   │       │
 │   │       ├── unit/                # (contains __init__.py for pytest discovery)
 │   │       │   ├── test_api_keys.py     # Key format, hashing, uniqueness
-│   │       │   ├── test_ingest.py       # Batch limits, auth, rate limiting
+│   │       │   ├── test_clerk_jwt.py    # Issuer validation, JWKS caching, rotation
+│   │       │   ├── test_ingest.py       # Batch limits, payload size limits, rate limiting
 │   │       │   └── test_traces.py       # Cursor encoding, auth, tenant isolation
 │   │       ├── integration/         # (contains __init__.py for pytest discovery)
 │   │       │   └── test_integration.py  # Full ingest→query roundtrip
@@ -257,6 +258,12 @@ agentlens/
 
 ## 🚀 Quick Start
 
+> [!IMPORTANT]
+> **Prerequisites & Port Availability:**
+> Ensure host ports `3000` (Web Dashboard), `8000` (FastAPI), `5432` (PostgreSQL), and `6379` (Redis) are free before running Docker Compose:
+> - **PowerShell:** `Get-NetTCPConnection -LocalPort 3000, 8000, 5432, 6379`
+> - **Bash:** `lsof -i :3000,8000,5432,6379`
+
 ```bash
 git clone https://github.com/kp183/agentlens.git
 cd agentlens
@@ -271,6 +278,8 @@ pip install agentlens-py openai
 
 > [!NOTE]
 > Note that the package is installed via `agentlens-py`, but the Python import name remains `import agentlens as al`. Install your model provider package (such as `openai`, `anthropic`, or `langgraph`) alongside `agentlens-py`.
+>
+> The live example below requires an active `OPENAI_API_KEY` environment variable (`export OPENAI_API_KEY="your-key"` or `$env:OPENAI_API_KEY="your-key"`). No OpenAI key? Run the simulated offline demo: `python examples/offline_demo.py`.
 
 ```python
 import agentlens as al
@@ -295,6 +304,8 @@ al.flush()
 
 # Your trace appears live at http://localhost:3000
 ```
+
+No API key? Run the offline demo: `python examples/offline_demo.py`.
 
 For production deployment and multi-tenant authentication using Clerk, see [docs/production-setup.md](docs/production-setup.md).
 
@@ -476,7 +487,7 @@ All responses follow the envelope format: `{"data": ..., "meta": {...}}`
 
 ## 🧪 Testing & Quality
 
-The test suite includes **44 backend tests** and **19 SDK tests** (63 total) spanning four testing strategies:
+The test suite includes **59 backend tests** and **29 SDK tests** (88 total) spanning four testing strategies:
 
 ```bash
 # Run everything
@@ -491,7 +502,7 @@ docker compose exec api pytest tests/smoke/ -v          # Schema verification
 
 | Category | Tests | What's Covered |
 |----------|-------|----------------|
-| **Unit** | 21 | API key format/hashing, ingestion validation, cursor encoding, auth checks |
+| **Unit** | 36 | API key format/hashing, Clerk JWT & key rotation, payload size limits, cursor encoding |
 | **Integration** | 3 | Full ingest → query roundtrip, API key lifecycle |
 | **Property** | 16 | Format invariants, batch counting, tenant isolation, serialization (Hypothesis) |
 | **Smoke** | 4 | Table existence, index verification, GIN index type, partial index validation |

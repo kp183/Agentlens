@@ -140,6 +140,9 @@ class AgentLensClient:
     def enqueue(self, item: Dict[str, Any]):
         if not self.enabled:
             return
+        if item.get("span_type") == "llm":
+            from agentlens.context import increment_llm_span_count
+            increment_llm_span_count()
         item = self._sanitize_span(item)
         try:
             self._queue.put_nowait(item)
