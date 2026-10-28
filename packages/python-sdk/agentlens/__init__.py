@@ -13,7 +13,7 @@ from agentlens.instruments.anthropic import instrument_anthropic
 from agentlens.instruments.langgraph import AgentLensLangGraphCallbackHandler, instrument_langgraph
 from agentlens.instruments.openai import instrument_openai
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 __all__ = [
     "__version__",
