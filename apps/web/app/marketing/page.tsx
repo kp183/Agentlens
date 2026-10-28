@@ -66,10 +66,12 @@ al.init(api_key="al_live_...")
 # 2. Auto-instrument clients
 al.instrument_openai()
 
-# 3. Trace your agent steps
+# 3. Requires OPENAI_API_KEY (or run examples/offline_demo.py)
+client = openai.OpenAI()
+
+# 4. Trace your agent steps
 @al.trace(name="Support Agent")
 def run():
-    client = openai.OpenAI()
     return client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": "Help!"}]
@@ -400,7 +402,13 @@ al.flush()`
                   <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-400 mt-0.5">
                     <Check className="h-3 w-3" />
                   </div>
-                  <span className="text-sm text-slate-300">Simple <code>pip install agentlens-py</code> install.</span>
+                  <span className="text-sm text-slate-300">Simple <code>pip install agentlens-py</code> install (import as <code>import agentlens as al</code>).</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-400 mt-0.5">
+                    <Check className="h-3 w-3" />
+                  </div>
+                  <span className="text-sm text-slate-300">Live runs require <code>OPENAI_API_KEY</code> (or test with <code>examples/offline_demo.py</code>).</span>
                 </div>
                 <div className="flex items-start gap-3">
                   <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-400 mt-0.5">

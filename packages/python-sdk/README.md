@@ -32,6 +32,9 @@ Instrument your application and generate your first trace in seconds:
 pip install agentlens-py openai
 ```
 
+> [!NOTE]
+> The live quickstart requires an active `OPENAI_API_KEY` environment variable (`export OPENAI_API_KEY="your-key"` or `$env:OPENAI_API_KEY="your-key"`). No OpenAI key? Run the simulated offline demo: `python examples/offline_demo.py`.
+
 ```python
 import agentlens as al
 import openai

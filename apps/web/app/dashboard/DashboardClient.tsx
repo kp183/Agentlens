@@ -868,9 +868,9 @@ export default function DashboardPage() {
                 <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 text-xs text-slate-300">
                   {guideTab === "install" && (
                     <div className="space-y-2">
-                      <p className="text-slate-400">Install the AgentLens Python SDK in your project:</p>
+                      <p className="text-slate-400">Install the AgentLens Python SDK in your project (package is <code className="text-slate-200 bg-slate-900 px-1 py-0.5 rounded font-mono">agentlens-py</code>; import as <code className="text-slate-200 bg-slate-900 px-1 py-0.5 rounded font-mono">import agentlens as al</code>):</p>
                       <pre className="p-3 rounded-lg bg-slate-950 border border-slate-900 font-mono text-indigo-300 select-all">
-                        pip install agentlens-py
+                        pip install agentlens-py openai
                       </pre>
                     </div>
                   )}
@@ -912,7 +912,7 @@ def run_agent(prompt: str):
         # ... fetch data ...
         s.set_output({"status": "verified"})
 
-    # Instrument OpenAI calls automatically
+    # Instrument OpenAI calls automatically (requires OPENAI_API_KEY)
     client = OpenAI()
     response = client.chat.completions.create(
         model="gpt-4o-mini",
