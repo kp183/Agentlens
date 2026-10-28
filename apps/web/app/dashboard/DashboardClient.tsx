@@ -870,7 +870,7 @@ export default function DashboardPage() {
                     <div className="space-y-2">
                       <p className="text-slate-400">Install the AgentLens Python SDK in your project (package is <code className="text-slate-200 bg-slate-900 px-1 py-0.5 rounded font-mono">agentlens-py</code>; import as <code className="text-slate-200 bg-slate-900 px-1 py-0.5 rounded font-mono">import agentlens as al</code>):</p>
                       <pre className="p-3 rounded-lg bg-slate-950 border border-slate-900 font-mono text-indigo-300 select-all">
-                        pip install agentlens-py openai
+                        pip install agentlens-py
                       </pre>
                     </div>
                   )}

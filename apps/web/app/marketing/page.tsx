@@ -57,7 +57,8 @@ export default function LandingPage() {
   })();
 
   const codeSnippets = {
-    openai: `import agentlens as al
+    openai: `# Install SDK: pip install agentlens-py
+import agentlens as al
 import openai
 
 # 1. Initialize SDK
@@ -79,7 +80,8 @@ def run():
 
 run()
 al.flush()`,
-    anthropic: `import agentlens as al
+    anthropic: `# Install SDK: pip install agentlens-py
+import agentlens as al
 import anthropic
 
 # 1. Initialize SDK
@@ -100,7 +102,8 @@ def write_story():
 
 write_story()
 al.flush()`,
-    custom: `import agentlens as al
+    custom: `# Install SDK: pip install agentlens-py
+import agentlens as al
 
 al.init(api_key="al_live_...")
 
@@ -227,6 +230,17 @@ al.flush()`
           >
             <Terminal className="h-4 w-4 text-indigo-400" /> View SDK on GitHub
           </a>
+        </div>
+
+        {/* Hero Quickstart Snippet */}
+        <div className="mt-8 mx-auto max-w-md rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-2.5 shadow-lg backdrop-blur-sm">
+          <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+            <span className="flex items-center gap-2">
+              <span className="text-indigo-400 select-none">$</span>
+              <code className="text-indigo-300 font-semibold select-all">pip install agentlens-py</code>
+            </span>
+            <span className="text-[11px] text-slate-500">Python 3.11+</span>
+          </div>
         </div>
 
         {/* Dashboard Mockup Representation */}
@@ -618,6 +632,12 @@ al.flush()`
             >
               GitHub Repository
             </a>
+          </div>
+
+          {/* Footer Quickstart Snippet */}
+          <div className="mt-8 inline-flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/80 px-5 py-2.5 font-mono text-xs text-slate-300 shadow-md">
+            <span className="text-indigo-400 select-none">$</span>
+            <code className="text-indigo-300 select-all font-semibold">pip install agentlens-py</code>
           </div>
         </div>
       </section>
