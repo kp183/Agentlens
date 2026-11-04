@@ -1225,10 +1225,12 @@ al.instrument_openai()`}
                           key={span.id}
                           onClick={() => setSelectedSpanId(span.id)}
                           className={`group flex flex-col p-3 rounded-xl border cursor-pointer transition ${
-                            isSelected 
+                            span.status === "error"
+                              ? isSelected
+                                ? "bg-rose-500/10 border-rose-500/40 text-rose-200 ring-1 ring-rose-500/30"
+                                : "bg-rose-500/5 border-rose-500/20 hover:border-rose-500/30 text-rose-200"
+                              : isSelected 
                               ? "bg-indigo-600/10 border-indigo-500/40 text-indigo-200" 
-                              : span.status === "error"
-                              ? "bg-rose-500/5 border-rose-500/20 hover:border-rose-500/30 text-rose-200"
                               : "bg-slate-900/30 border-slate-900 hover:border-slate-800 text-slate-300"
                           }`}
                         >
