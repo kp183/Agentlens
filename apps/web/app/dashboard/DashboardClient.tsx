@@ -15,6 +15,7 @@ import {
   TraceDiffResult,
   SpanDiff
 } from "@/lib/api";
+import { isSpanRunning, formatDuration, getGanttMetrics } from "@/lib/span-utils";
 import { 
   Sparkles, 
   Building2, 
@@ -393,30 +394,6 @@ export default function DashboardPage() {
     }
   });
 
-  // Calculate relative Gantt metrics
-  const getGanttMetrics = (span: Span, traceStartStr: string, traceDurationMs: number | null) => {
-    if (!traceStartStr || !traceDurationMs) return { left: 0, width: 100 };
-    
-    const traceStart = new Date(traceStartStr).getTime();
-    const spanStart = new Date(span.started_at).getTime();
-    
-    const offsetMs = Math.max(0, spanStart - traceStart);
-    
-    const offsetPercent = (offsetMs / traceDurationMs) * 100;
-    
-    let spanDuration = span.duration_ms;
-    if (spanDuration === null || spanDuration === undefined) {
-      // Still running, estimate based on now
-      spanDuration = Date.now() - spanStart;
-    }
-    
-    const widthPercent = Math.max(2, (spanDuration / traceDurationMs) * 100);
-    
-    return {
-      left: Math.min(98, offsetPercent),
-      width: Math.min(100 - offsetPercent, widthPercent)
-    };
-  };
 
   // Reconstruct tree flat nodes with indentation depth
   const flatSpanNodes = React.useMemo(() => {
@@ -1191,7 +1168,7 @@ al.instrument_openai()`}
                     <div>
                       <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">Duration</div>
                       <div className="font-semibold text-slate-200 font-mono">
-                        {traceDetail.duration_ms ? `${(traceDetail.duration_ms / 1000).toFixed(2)}s` : "Running"}
+                        {traceDetail.status === "running" ? "Running" : traceDetail.duration_ms !== null && traceDetail.duration_ms !== undefined ? (traceDetail.duration_ms < 1 ? "<1ms" : `${(traceDetail.duration_ms / 1000).toFixed(2)}s`) : "Running"}
                       </div>
                     </div>
                   </div>
@@ -1274,11 +1251,11 @@ al.instrument_openai()`}
                             {/* Duration Badge */}
                             <div className="flex items-center space-x-2 shrink-0 ml-4">
                               <span className="text-xs font-mono text-slate-400">
-                                {span.duration_ms ? `${span.duration_ms}ms` : "running"}
+                                {formatDuration(span)}
                               </span>
                               
                               {span.status === "error" && <AlertCircle className="h-4 w-4 text-rose-500" />}
-                              {span.status === "running" && (
+                              {isSpanRunning(span) && (
                                 <span className="relative flex h-2.5 w-2.5">
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
                                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-indigo-500"></span>
@@ -1293,13 +1270,14 @@ al.instrument_openai()`}
                               className={`absolute h-full rounded-full transition-all duration-300 ${
                                 span.status === "error" 
                                   ? "bg-rose-500" 
-                                  : span.status === "running"
+                                  : isSpanRunning(span)
                                   ? "bg-indigo-500 animate-pulse"
                                   : "bg-gradient-to-r from-indigo-500 to-violet-500"
                               }`}
                               style={{ 
                                 left: `${metrics.left}%`, 
-                                width: `${metrics.width}%` 
+                                width: `${metrics.width}%`,
+                                minWidth: "6px"
                               }}
                             />
                           </div>
@@ -1331,11 +1309,9 @@ al.instrument_openai()`}
                           <span className="text-[10px] font-mono bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded">
                             Type: {selectedSpanObj.span_type}
                           </span>
-                           {selectedSpanObj.duration_ms !== null && selectedSpanObj.duration_ms !== undefined && (
-                            <span className="text-[10px] font-mono bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded">
-                              Duration: {selectedSpanObj.duration_ms}ms
-                            </span>
-                          )}
+                          <span className="text-[10px] font-mono bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded">
+                            Duration: {formatDuration(selectedSpanObj)}
+                          </span>
                           {selectedSpanObj.cost_usd !== null && selectedSpanObj.cost_usd !== undefined && selectedSpanObj.cost_usd > 0 && (
                             <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded">
                               Cost: {formatCost(selectedSpanObj.cost_usd)}
