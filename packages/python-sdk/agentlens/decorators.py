@@ -194,6 +194,9 @@ class Span:
         self.metadata = {}
         self.input = None
         self.output = None
+        self.status = None
+        self.error_message = None
+        self.error_type = None
         self.input_tokens = None
         self.output_tokens = None
         self.model = None
@@ -223,6 +226,29 @@ class Span:
 
     def set_input(self, input_val: Any):
         self.input = input_val
+
+    def set_status(
+        self,
+        status: str,
+        message: Optional[str] = None,
+        error_type: Optional[str] = None,
+    ) -> None:
+        """Set the span execution status manually without raising an exception.
+
+        Args:
+            status: Either 'success' or 'error'.
+            message: Optional error message description.
+            error_type: Optional error classification type (e.g. 'PolicyError').
+        """
+        if status not in ("success", "error"):
+            raise ValueError(f"Invalid status '{status}'. Must be 'success' or 'error'.")
+        self.status = status
+        if status == "error":
+            self.error_message = message
+            self.error_type = error_type or ("Error" if message else None)
+        else:
+            self.error_message = None
+            self.error_type = None
 
 
 @contextmanager
@@ -267,6 +293,15 @@ def span(name: str, span_type: str = "custom", tags: Optional[List[str]] = None)
         ended_at = datetime.now(timezone.utc)
         duration_ms = int((time.time() - start_time) * 1000)
 
+        # Apply manual span status if no exception was raised
+        if error_type is None and s.status is not None:
+            status = s.status
+            if s.status == "error":
+                if s.error_message:
+                    error_message = s.error_message
+                if s.error_type:
+                    error_type = s.error_type
+
         span_payload = {
             "id": span_id,
             "trace_id": trace_id,
@@ -279,12 +314,15 @@ def span(name: str, span_type: str = "custom", tags: Optional[List[str]] = None)
             "duration_ms": duration_ms,
             "tags": tags or [],
         }
-        if error_type:
-            span_payload.update({
-                "error_type": error_type,
-                "error_message": error_message,
-                "error_stack": error_stack,
-            })
+        if error_type or error_message or error_stack:
+            err_dict = {}
+            if error_type:
+                err_dict["error_type"] = error_type
+            if error_message:
+                err_dict["error_message"] = error_message
+            if error_stack:
+                err_dict["error_stack"] = error_stack
+            span_payload.update(err_dict)
 
         if s.input is not None:
             span_payload["input"] = s.input

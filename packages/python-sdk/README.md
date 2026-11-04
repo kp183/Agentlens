@@ -80,6 +80,11 @@ def run_assistant(user_query: str):
         s.set_metadata("query", user_query)
         result = db_search(user_query)
         s.set_output({"results_count": len(result)})
+
+    # 3. Mark span status manually without raising an exception
+    with al.span(name="Guardrail Check", span_type="custom") as s:
+        if not result:
+            s.set_status("error", message="No records found in database", error_type="NotFoundError")
         
     return result
 ```
