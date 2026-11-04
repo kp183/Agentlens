@@ -73,16 +73,19 @@ def run_loop_scenario() -> tuple[Pipeline, RunControl]:
         if control.stopped:
             break
 
-    # When Pathlayer's STOP fires, record post-mortem in a final span
+    # When Pathlayer's STOP fires, record post-mortem in metadata, output, and mark error status
     if control.stopped and pipeline.post_mortem is not None:
         pm = pipeline.post_mortem
+        post_mortem_data = {
+            "reason": pm.reason,
+            "triggering_detector": _triggering_detector(pm),
+            "action_index": pm.stopped_at_index + 1,
+            "events_processed": pm.events_processed,
+        }
         with al.span(name="pathlayer:STOP", span_type="custom") as s:
-            s.set_output({
-                "reason": pm.reason,
-                "triggering_detector": _triggering_detector(pm),
-                "action_index": pm.stopped_at_index + 1,
-                "events_processed": pm.events_processed,
-            })
+            s.set_metadata(post_mortem_data)
+            s.set_output(post_mortem_data)
+            s.set_status("error", f"Pathlayer STOP: {pm.reason}")
 
     return pipeline, control
 
