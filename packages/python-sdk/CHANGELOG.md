@@ -2,6 +2,11 @@
 
 All notable changes to the `agentlens-py` package are documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Manual Span Status API**: Added `Span.set_status("success" | "error", message=None, error_type=None)` to manually set a span's execution status and optional error message/type without having to raise an unhandled Python exception.
+
 ## [0.2.2] - 2026-10-28
 
 ### Changed
